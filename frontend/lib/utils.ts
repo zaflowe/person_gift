@@ -178,7 +178,8 @@ export async function apiPost<T>(url: string, data?: unknown): Promise<T> {
             }
         }
         const error = await res.json().catch(() => ({ detail: "请求失败" }));
-        throw new Error(error.detail || "请求失败");
+        const errorMessage = typeof error.detail === 'object' ? JSON.stringify(error.detail) : (error.detail || "请求失败");
+        throw new Error(errorMessage);
     }
 
     return res.json();

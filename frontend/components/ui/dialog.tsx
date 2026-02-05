@@ -74,6 +74,9 @@ export function DialogTrigger({ children, asChild }: DialogTriggerProps) {
 }
 
 // --- Content ---
+import { createPortal } from "react-dom";
+
+// --- Content ---
 interface DialogContentProps {
     children: React.ReactNode;
     className?: string;
@@ -81,10 +84,16 @@ interface DialogContentProps {
 
 export function DialogContent({ children, className }: DialogContentProps) {
     const { open, setOpen } = useDialog();
+    const [mounted, setMounted] = React.useState(false);
 
-    if (!open) return null;
+    React.useEffect(() => {
+        setMounted(true);
+        return () => setMounted(false);
+    }, []);
 
-    return (
+    if (!open || !mounted) return null;
+
+    const portalContent = (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
             {/* Backdrop */}
             <div
@@ -109,6 +118,8 @@ export function DialogContent({ children, className }: DialogContentProps) {
             </div>
         </div>
     );
+
+    return createPortal(portalContent, document.body);
 }
 
 // --- Header ---

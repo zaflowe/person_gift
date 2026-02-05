@@ -90,18 +90,22 @@ function ScheduleContent() {
     }, []);
 
     // Initial Scroll (Auto to Today at Left)
+    // Initial Scroll (Auto to Today at Left)
     useEffect(() => {
         if (days.length > 0 && scrollContainerRef.current) {
             // Logic: All past days are NARROW.
             // Today is at index PAST_DAYS.
             // Target Left = PAST_DAYS * WIDTH_NARROW
-            // Use requestAnimationFrame to ensure layout is ready
-            requestAnimationFrame(() => {
+
+            // Use setTimeout to allow layout (especially variable width columns) to stabilize
+            const timer = setTimeout(() => {
                 if (scrollContainerRef.current) {
                     const targetLeft = (PAST_DAYS * WIDTH_NARROW);
                     scrollContainerRef.current.scrollTo({ left: targetLeft, behavior: 'auto' });
                 }
-            });
+            }, 100);
+
+            return () => clearTimeout(timer);
         }
     }, [days]);
 

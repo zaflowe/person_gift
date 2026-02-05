@@ -373,12 +373,10 @@ Respond in JSON format:
 }}
 """
             
-            # Use vision model
-            from PIL import Image
-            img = Image.open(image_path)
-            response = self.vision_model.generate_content([prompt, img])
             
-            result_text = response.text.strip()
+            # Use unified AI call handling
+            result_text = self._call_ai(prompt, image_path)
+            result_text = result_text.strip()
             
             # Try to extract JSON
             if "```json" in result_text:

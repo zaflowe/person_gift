@@ -179,6 +179,88 @@ class TaskService:
             else:
                 task.status = "OPEN"  # Return to OPEN if failed
                 logger.info(f"Task {task_id} evidence failed, returned to OPEN")
+
+            # ---------------------------------------------------------
+            # NEW: Auto-create Metrics from AI Result
+            # ---------------------------------------------------------
+            if ai_result["result"] == "pass" and "extracted_values" in ai_result:
+                values = ai_result["extracted_values"]
+                
+                # Check for Weight (kg)
+                if "weight" in values or "kg" in values:
+                    try:
+                        val = float(values.get("weight") or values.get("kg"))
+                        from app.models.metric import MetricEntry
+                        metric = MetricEntry(
+                            user_id=user.id,
+                            metric_type="weight",
+                            value=val,
+                            unit="kg",
+                            task_id=task.id,
+                            evidence_id=evidence.id,
+                            notes=f"Auto-extracted from task: {task.title}"
+                        )
+                        db.add(metric)
+                    except ValueError:
+                        pass
+                
+                # Check for Body Fat (%)
+                if "bodyfat" in values or "body_fat" in values:
+                    try:
+                        val = float(values.get("bodyfat") or values.get("body_fat"))
+                        from app.models.metric import MetricEntry
+                        metric = MetricEntry(
+                            user_id=user.id,
+                            metric_type="bodyfat",
+                            value=val,
+                            unit="%",
+                            task_id=task.id,
+                            evidence_id=evidence.id,
+                            notes=f"Auto-extracted from task: {task.title}"
+                        )
+                        db.add(metric)
+                    except ValueError:
+                        pass
+
+                # Special Handling: Task 1 - "System Weight"
+                if task.title.startswith("【系统】本周体重记录") and "weight" not in values and "kg" not in values:
+                    # If AI didn't parse it (unlikely for 'number' type), try to use raw content
+                    try:
+                        val = float(evidence.content)
+                        from app.models.metric import MetricEntry
+                        metric = MetricEntry(
+                            user_id=user.id,
+                            metric_type="weight",
+                            value=val,
+                            unit="kg",
+                            task_id=task.id,
+                            evidence_id=evidence.id,
+                            notes=f"System Task: Weight Record"
+                        )
+                        db.add(metric)
+                    except ValueError:
+                        pass
+
+                # Special Handling: Task 2 - "System Body Photo"
+                if task.title.startswith("【系统】本周身材记录") and image_path:
+                    try:
+                        # Call specialized bodyfat estimation
+                        fat_result = await ai_service.estimate_bodyfat(image_path, user.username)
+                        if "estimated_bodyfat" in fat_result:
+                            from app.models.metric import MetricEntry
+                            metric = MetricEntry(
+                                user_id=user.id,
+                                metric_type="bodyfat",
+                                value=float(fat_result["estimated_bodyfat"]),
+                                unit="%",
+                                task_id=task.id,
+                                evidence_id=evidence.id,
+                                notes=f"AI Visual Estimation: {fat_result.get('analysis', '')}"
+                            )
+                            db.add(metric)
+                    except Exception as e:
+                        logger.error(f"Failed to estimate bodyfat in task submission: {e}")
+            # ---------------------------------------------------------
         
         except Exception as e:
             logger.error(f"Error in AI judgment: {e}")

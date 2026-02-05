@@ -89,7 +89,7 @@ class QwenClient:
             ]
             
             response = self.client.chat.completions.create(
-                model=self.model,
+                model="qwen-vl-max",  # Force VL model for images
                 messages=messages,
                 temperature=temperature,
                 max_tokens=max_tokens

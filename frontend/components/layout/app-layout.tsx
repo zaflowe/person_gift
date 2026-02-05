@@ -24,19 +24,26 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
     useEffect(() => {
         if (user) {
-            const checkReminder = async () => {
+            const checkReminderAndSystemTasks = async () => {
                 const token = getToken();
                 if (!token) return;
                 try {
+                    // 1. Check Daily Reminder
                     await fetch("/api/conversation/check-reminder", {
                         method: "POST",
                         headers: { Authorization: `Bearer ${token}` }
                     });
+
+                    // 2. Check Weekly System Tasks (Global Trigger)
+                    await fetch("/api/system-tasks/weekly-check", {
+                        method: "POST",
+                        headers: { Authorization: `Bearer ${token}` }
+                    });
                 } catch (e) {
-                    console.error("Reminder check failed", e);
+                    console.error("Global checks failed", e);
                 }
             };
-            checkReminder();
+            checkReminderAndSystemTasks();
         }
     }, [user]);
 
