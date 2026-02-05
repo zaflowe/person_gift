@@ -1,0 +1,28 @@
+{
+    # Global options
+    email your_email@example.com
+}
+
+# Replace with your domain (e.g., example.com)
+:80 {
+    # Backend API (WebSocket support is automatic in Caddy)
+    handle /api/* {
+        reverse_proxy backend:8000
+    }
+
+    # Frontend
+    handle /* {
+        reverse_proxy frontend:3000
+    }
+
+    # Basic security headers
+    header {
+        X-Frame-Options "SAMEORIGIN"
+        X-XSS-Protection "1; mode=block"
+        X-Content-Type-Options "nosniff"
+    }
+    
+    # Upload size limit handled by Caddy defaults? 
+    # Caddy doesn't enforce strict body limits by default like Nginx's client_max_body_size
+    # unless configured via request_body logic, but usually it just streams.
+}

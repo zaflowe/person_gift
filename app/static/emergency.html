@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Emergency Entry</title>
+    <meta charset="utf-8">
+    <style>
+        body {
+            font-family: sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background: #1a1a1a;
+            color: #fff;
+        }
+
+        .card {
+            background: #333;
+            padding: 2rem;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        button {
+            background: #0070f3;
+            color: white;
+            border: none;
+            padding: 1rem 2rem;
+            font-size: 1.2rem;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+
+        button:hover {
+            background: #0051a2;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="card">
+        <h1>🟢 应急通道</h1>
+        <p>前端服务已死，后端为您服务。</p>
+        <button onclick="enterSystem()">🚀 注入令牌并起飞</button>
+        <p id="status" style="margin-top: 1rem; color: #aaa;"></p>
+    </div>
+
+    <script>
+        function enterSystem() {
+            const token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhZG1pbiIsImV4cCI6NDk1NTA4NTI3M30.zM7p6d4K6p5I2g7R5o4M3n8U2t1V4w7X2y4Z6a8C3e5";
+            document.getElementById('status').innerText = "正在注入 100 年有效期的超级令牌...";
+
+            // 1. Write to LocalStorage (for frontend app)
+            localStorage.setItem("token", token);
+
+            // 2. Write to Cookie (for SSR)
+            document.cookie = `token=${token}; path=/; domain=localhost`;
+
+            setTimeout(() => {
+                document.getElementById('status').innerText = "跳转中...";
+                // Redirect to Frontend Dashboard
+                window.location.href = "http://localhost:3000/dashboard";
+            }, 1000);
+        }
+
+        // Auto-run if param present
+        if (window.location.search.includes('auto=true')) {
+            enterSystem();
+        }
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,193 @@
+﻿
+> frontend@0.1.0 lint
+> eslint
+
+
+D:\Antigravity_Workspace\person_gift\frontend\app\dashboard\page.tsx
+  25:41  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+D:\Antigravity_Workspace\person_gift\frontend\app\exemptions\page.tsx
+  5:10  warning  'LoadingSkeleton' is defined but never used  @typescript-eslint/no-unused-vars
+
+D:\Antigravity_Workspace\person_gift\frontend\app\login-v2\page.tsx
+  22:25  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+D:\Antigravity_Workspace\person_gift\frontend\app\login\page.tsx
+  22:25  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+D:\Antigravity_Workspace\person_gift\frontend\app\projects\[id]\page.tsx
+    8:40  warning  'Lock' is defined but never used                    @typescript-eslint/no-unused-vars
+   31:11  warning  'router' is assigned a value but never used         @typescript-eslint/no-unused-vars
+   46:12  warning  'milestoneSort' is assigned a value but never used  @typescript-eslint/no-unused-vars
+   48:12  warning  'editForm' is assigned a value but never used       @typescript-eslint/no-unused-vars
+   48:22  warning  'setEditForm' is assigned a value but never used    @typescript-eslint/no-unused-vars
+   60:45  error    Unexpected any. Specify a different type            @typescript-eslint/no-explicit-any
+   65:21  error    Unexpected any. Specify a different type            @typescript-eslint/no-explicit-any
+   71:61  error    Unexpected any. Specify a different type            @typescript-eslint/no-explicit-any
+   76:21  error    Unexpected any. Specify a different type            @typescript-eslint/no-explicit-any
+   88:21  error    Unexpected any. Specify a different type            @typescript-eslint/no-explicit-any
+  101:21  error    Unexpected any. Specify a different type            @typescript-eslint/no-explicit-any
+  115:23  error    Unexpected any. Specify a different type            @typescript-eslint/no-explicit-any
+  137:23  error    Unexpected any. Specify a different type            @typescript-eslint/no-explicit-any
+  203:58  warning  'e' is defined but never used                       @typescript-eslint/no-unused-vars
+  203:61  error    Unexpected any. Specify a different type            @typescript-eslint/no-explicit-any
+  487:73  error    Unexpected any. Specify a different type            @typescript-eslint/no-explicit-any
+
+D:\Antigravity_Workspace\person_gift\frontend\app\projects\page.tsx
+   6:10  warning  'LoadingSkeleton' is defined but never used     @typescript-eslint/no-unused-vars
+   6:27  warning  'EmptyState' is defined but never used          @typescript-eslint/no-unused-vars
+  73:42  warning  'collapsed' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+D:\Antigravity_Workspace\person_gift\frontend\app\schedule\page.tsx
+    5:10  warning  'LoadingSkeleton' is defined but never used                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         @typescript-eslint/no-unused-vars
+   13:10  warning  'getToken' is defined but never used                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                @typescript-eslint/no-unused-vars
+   52:7   warning  'WIDTH_WIDE' is assigned a value but never used                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     @typescript-eslint/no-unused-vars
+   89:9   error    Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+D:\Antigravity_Workspace\person_gift\frontend\app\schedule\page.tsx:89:9
+  87 |             arr.push(d);
+  88 |         }
+> 89 |         setDays(arr);
+     |         ^^^^^^^ Avoid calling setState() directly within an effect
+  90 |     }, []);
+  91 |
+  92 |     // Initial Scroll (Auto to Today at Left)  react-hooks/set-state-in-effect
+  288:63  warning  'statusColor' is assigned a value but never used                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    @typescript-eslint/no-unused-vars
+
+D:\Antigravity_Workspace\person_gift\frontend\app\settings\page.tsx
+  6:10  warning  'API_BASE_URL' is defined but never used  @typescript-eslint/no-unused-vars
+
+D:\Antigravity_Workspace\person_gift\frontend\app\tasks\[id]\page.tsx
+    9:72  warning  'FileText' is defined but never used      @typescript-eslint/no-unused-vars
+   88:23  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  103:23  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  120:23  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+D:\Antigravity_Workspace\person_gift\frontend\app\tasks\page.tsx
+  11:39  warning  'Tag' is defined but never used                    @typescript-eslint/no-unused-vars
+  11:44  warning  'CalendarClock' is defined but never used          @typescript-eslint/no-unused-vars
+  88:11  warning  'overdueCount' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+D:\Antigravity_Workspace\person_gift\frontend\app\test-connection\page.tsx
+  22:27  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+D:\Antigravity_Workspace\person_gift\frontend\components\chat-planner.tsx
+   31:52  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   32:48  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   33:54  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  109:39  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  118:23  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  143:23  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  166:23  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  216:23  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  243:18  warning  'e' is defined but never used             @typescript-eslint/no-unused-vars
+  470:76  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+D:\Antigravity_Workspace\person_gift\frontend\components\dashboard\body-metrics-card.tsx
+   5:10  warning  'Activity' is defined but never used      @typescript-eslint/no-unused-vars
+   5:40  warning  'TrendingUp' is defined but never used    @typescript-eslint/no-unused-vars
+   5:52  warning  'Minus' is defined but never used         @typescript-eslint/no-unused-vars
+   8:48  warning  'YAxis' is defined but never used         @typescript-eslint/no-unused-vars
+  18:44  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  19:41  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+D:\Antigravity_Workspace\person_gift\frontend\components\dashboard\focus-study-card.tsx
+    6:52  warning  'Legend' is defined but never used             @typescript-eslint/no-unused-vars
+   19:11  warning  'todayMin' is assigned a value but never used  @typescript-eslint/no-unused-vars
+   20:11  warning  'weekMin' is assigned a value but never used   @typescript-eslint/no-unused-vars
+  165:48  error    Unexpected any. Specify a different type       @typescript-eslint/no-explicit-any
+  165:59  error    Unexpected any. Specify a different type       @typescript-eslint/no-explicit-any
+  165:71  error    Unexpected any. Specify a different type       @typescript-eslint/no-explicit-any
+
+D:\Antigravity_Workspace\person_gift\frontend\components\dashboard\strategic-projects-card.tsx
+   4:45  warning  'History' is defined but never used       @typescript-eslint/no-unused-vars
+  70:57  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+D:\Antigravity_Workspace\person_gift\frontend\components\dashboard\study-charts.tsx
+   5:10  warning  'cn' is defined but never used            @typescript-eslint/no-unused-vars
+  28:16  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  77:52  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+D:\Antigravity_Workspace\person_gift\frontend\components\dashboard\study-stats-card.tsx
+  6:10  warning  'cn' is defined but never used  @typescript-eslint/no-unused-vars
+
+D:\Antigravity_Workspace\person_gift\frontend\components\drawers\schedule-drawer.tsx
+  66:23  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+D:\Antigravity_Workspace\person_gift\frontend\components\focus\focus-controller.tsx
+    3:31  warning  'useCallback' is defined but never used                                                                                                       @typescript-eslint/no-unused-vars
+    9:10  warning  'ConfirmDialog' is defined but never used                                                                                                     @typescript-eslint/no-unused-vars
+   10:10  warning  'AlertCircle' is defined but never used                                                                                                       @typescript-eslint/no-unused-vars
+   10:23  warning  'ArrowLeft' is defined but never used                                                                                                         @typescript-eslint/no-unused-vars
+   27:13  warning  'user' is assigned a value but never used                                                                                                     @typescript-eslint/no-unused-vars
+   92:22  warning  'e' is defined but never used                                                                                                                 @typescript-eslint/no-unused-vars
+  156:8   warning  React Hook useEffect has missing dependencies: 'activeProjectName' and 'activeTaskTitle'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+  216:18  warning  'e' is defined but never used                                                                                                                 @typescript-eslint/no-unused-vars
+
+D:\Antigravity_Workspace\person_gift\frontend\components\focus\focus-timer.tsx
+  3:10  warning  'useState' is defined but never used   @typescript-eslint/no-unused-vars
+  3:20  warning  'useEffect' is defined but never used  @typescript-eslint/no-unused-vars
+  4:44  warning  'RefreshCw' is defined but never used  @typescript-eslint/no-unused-vars
+
+D:\Antigravity_Workspace\person_gift\frontend\components\habits\fixed-block-list.tsx
+  6:10  warning  'getToken' is defined but never used  @typescript-eslint/no-unused-vars
+
+D:\Antigravity_Workspace\person_gift\frontend\components\habits\habit-list.tsx
+   4:16  warning  'MoreHorizontal' is defined but never used  @typescript-eslint/no-unused-vars
+   4:32  warning  'Check' is defined but never used           @typescript-eslint/no-unused-vars
+   6:10  warning  'getToken' is defined but never used        @typescript-eslint/no-unused-vars
+  70:18  warning  'e' is defined but never used               @typescript-eslint/no-unused-vars
+
+D:\Antigravity_Workspace\person_gift\frontend\components\layout\app-layout.tsx
+   6:48  warning  'Shield' is defined but never used                                                                           @typescript-eslint/no-unused-vars
+  22:26  error    A `require()` style import is forbidden                                                                      @typescript-eslint/no-require-imports
+  23:27  error    A `require()` style import is forbidden                                                                      @typescript-eslint/no-require-imports
+  41:8   warning  React Hook useEffect has a missing dependency: 'getToken'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+D:\Antigravity_Workspace\person_gift\frontend\components\modals\create-project-modal.tsx
+  26:12  warning  'aiAnalysisInProgess' is assigned a value but never used                                                             @typescript-eslint/no-unused-vars
+  26:33  warning  'setAiAnalysisInProgress' is assigned a value but never used                                                         @typescript-eslint/no-unused-vars
+  34:67  error    Unexpected any. Specify a different type                                                                             @typescript-eslint/no-explicit-any
+  36:9   error    Use "@ts-expect-error" instead of "@ts-ignore", as "@ts-ignore" will do nothing if the following line is error-free  @typescript-eslint/ban-ts-comment
+  84:23  error    Unexpected any. Specify a different type                                                                             @typescript-eslint/no-explicit-any
+
+D:\Antigravity_Workspace\person_gift\frontend\components\modals\create-task-modal.tsx
+  77:23  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+D:\Antigravity_Workspace\person_gift\frontend\components\modals\edit-project-modal.tsx
+   4:10  warning  'apiPost' is defined but never used       @typescript-eslint/no-unused-vars
+   5:13  warning  'Plus' is defined but never used          @typescript-eslint/no-unused-vars
+   5:19  warning  'Trash' is defined but never used         @typescript-eslint/no-unused-vars
+  64:23  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+D:\Antigravity_Workspace\person_gift\frontend\components\ui\dialog.tsx
+  63:30  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+D:\Antigravity_Workspace\person_gift\frontend\components\ui\next-actions.tsx
+  3:10  warning  'ReactNode' is defined but never used  @typescript-eslint/no-unused-vars
+
+D:\Antigravity_Workspace\person_gift\frontend\lib\api\conversation.ts
+  19:12  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  20:12  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+D:\Antigravity_Workspace\person_gift\frontend\lib\api\schedule.ts
+  71:12  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+D:\Antigravity_Workspace\person_gift\frontend\lib\auth-context.tsx
+  40:18  warning  'error' is defined but never used  @typescript-eslint/no-unused-vars
+
+D:\Antigravity_Workspace\person_gift\frontend\lib\utils.ts
+  127:25  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  137:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  148:54  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  186:53  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  205:55  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+鉁?107 problems (52 errors, 55 warnings)
+
