@@ -198,7 +198,7 @@ export default function ChatPlanner({ embedded = false, className }: { embedded?
             await createQuickTask({
                 title: draftTask.title,
                 description: draftTask.description,
-                deadline: draftTask.deadline,
+                deadline: draftTask.deadline || "",
                 evidence_type: draftTask.evidence_type
             }, token);
 
