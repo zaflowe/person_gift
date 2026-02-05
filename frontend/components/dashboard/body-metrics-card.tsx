@@ -118,7 +118,7 @@ export function BodyMetricsCard() {
                     title: "【补充】身材记录",
                     description: "手动补充一次身材照片",
                     evidence_type: "image",
-                    evidence_criteria: "请上传一张全身正面照",
+                    evidence_criteria: "请上传一张半身正面照",
                     tags: ["健康", "体脂"]
                 };
 
