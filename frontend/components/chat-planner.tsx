@@ -177,7 +177,7 @@ export default function ChatPlanner({ embedded = false, className }: { embedded?
             setMessages(prev => [...prev, { role: "assistant", content: response.message }]);
 
             if (response.action_type === "create_project") {
-                setCurrentPlan({ session_id: response.conversation_id, plan: response.plan });
+                setCurrentPlan({ session_id: response.conversation_id, plan: response.plan as unknown as ProjectPlan });
                 setProjectBrief(null);
             }
         } catch (err: unknown) {
