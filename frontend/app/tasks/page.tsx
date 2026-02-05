@@ -196,6 +196,7 @@ function TasksContent() {
                                         )}
                                         <StatusBadge
                                             status={task.status}
+                                            type="task"
                                             className="px-2.5 py-1 text-xs font-semibold shadow-none border-0 bg-slate-100/80"
                                         />
                                     </div>
