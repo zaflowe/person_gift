@@ -142,7 +142,7 @@ export function MetricTrendChart({ title, data, unit, color = "#8b5cf6" }: Metri
                             <RechartsTooltip
                                 contentStyle={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)', borderRadius: '8px' }}
                                 itemStyle={{ color: 'var(--text)' }}
-                                formatter={(val: number) => [`${val} ${unit}`, '数值']}
+                                formatter={(val: any) => [`${val} ${unit}`, '数值']}
                             />
                             {/* <Legend /> */}
                             {data[0]?.baseline && (
