@@ -55,6 +55,10 @@ services:
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-https://yourdomain.com}
       SECRET_KEY: ${SECRET_KEY:-default_secret_please_change}
       GEMINI_API_KEY: ${GEMINI_API_KEY}
+      # AI Configuration
+      AI_PROVIDER: ${AI_PROVIDER:-qwen}
+      QWEN_API_KEY: ${QWEN_API_KEY}
+      QWEN_BASE_URL: ${QWEN_BASE_URL}
     networks:
       - app_network
 
