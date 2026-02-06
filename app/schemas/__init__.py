@@ -27,6 +27,11 @@ from app.schemas.metric import (
     WeeklySnapshotResponse,
     DashboardStats,
 )
+from app.schemas.project_long_task import (
+    ProjectLongTaskTemplateCreate,
+    ProjectLongTaskTemplateUpdate,
+    ProjectLongTaskTemplateResponse,
+)
 
 __all__ = [
     "UserCreate",
@@ -52,4 +57,7 @@ __all__ = [
     "MetricEntryResponse",
     "WeeklySnapshotResponse",
     "DashboardStats",
+    "ProjectLongTaskTemplateCreate",
+    "ProjectLongTaskTemplateUpdate",
+    "ProjectLongTaskTemplateResponse",
 ]

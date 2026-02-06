@@ -26,6 +26,7 @@ export interface Task {
     evidence_type?: string;
     evidence_criteria?: string;
     project_id?: string;
+    long_task_template_id?: string;
     completed_at?: string;
     created_at: string;
     scheduled_date?: string;

@@ -14,6 +14,7 @@ from app.database import SessionLocal
 from app.models.exemption import JobLock
 from app.models.task import PlanTemplate, Task
 from app.services.task_service import TaskService
+from app.services.project_long_task_service import project_long_task_service
 from app.services.reminder_service import process_all_daily_reminders
 
 logger = logging.getLogger(__name__)
@@ -175,6 +176,29 @@ def update_overdue_tasks():
         db.close()
 
 
+def generate_project_long_tasks():
+    """
+    Generate daily tasks from project long task templates.
+
+    Runs every day at 00:05 in the configured timezone.
+    Uses distributed lock to prevent duplicate generation.
+    """
+    db = SessionLocal()
+    try:
+        if not acquire_job_lock(db, "project_long_task_generation"):
+            logger.info("Skipping project long task generation - already running")
+            return
+
+        logger.info("Starting project long task generation")
+        created = project_long_task_service.process_daily_long_tasks(db)
+        logger.info(f"Project long task generation completed: {created} tasks created")
+    except Exception as e:
+        logger.error(f"Error in project long task generation: {e}")
+        db.rollback()
+    finally:
+        db.close()
+
+
 def start_scheduler():
     """Start the background scheduler."""
     # Weekly task generation: Monday 00:05 Asia/Taipei
@@ -213,6 +237,19 @@ def start_scheduler():
         ),
         id='daily_reminder',
         name='Daily Reminder',
+        replace_existing=True
+    )
+
+    # Project Long Tasks: Every day at 00:05
+    scheduler.add_job(
+        generate_project_long_tasks,
+        trigger=CronTrigger(
+            hour=0,
+            minute=5,
+            timezone=settings.timezone
+        ),
+        id='generate_project_long_tasks',
+        name='Generate project long tasks',
         replace_existing=True
     )
     

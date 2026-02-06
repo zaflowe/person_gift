@@ -11,7 +11,7 @@ from app.models.user import User
 
 from app.database import init_db
 from app.routers import auth, tasks, projects, exemptions, placeholders, dashboard, planner, conversation, schedule, metrics, study
-from app.routers import dashboard_v2, system_tasks, reminder_inject, habits
+from app.routers import dashboard_v2, system_tasks, reminder_inject, habits, project_long_tasks
 from app.services.scheduler import start_scheduler, stop_scheduler
 
 
@@ -92,6 +92,7 @@ app.include_router(dashboard_v2.router)
 # app.include_router(system_tasks.router) # Removed duplicate
 app.include_router(reminder_inject.router)
 app.include_router(habits.router)
+app.include_router(project_long_tasks.router)
 
 
 @app.get("/")

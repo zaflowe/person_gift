@@ -13,6 +13,8 @@ import useSWR, { mutate } from "swr";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useToast } from "@/components/ui/toast";
 import { CreateTaskModal } from "@/components/modals/create-task-modal";
+import { CreateLongTaskModal } from "@/components/modals/create-long-task-modal";
+import { ProjectLongTaskTemplate, hideProjectLongTaskTemplate } from "@/lib/api/project-long-tasks";
 
 import { EditProjectModal } from "@/components/modals/edit-project-modal";
 
@@ -51,11 +53,16 @@ function ProjectDetailContent() {
     const { data: milestones, mutate: reloadMilestones } = useSWR<Milestone[]>(id ? `/api/projects/${id}/milestones` : null, fetcher);
     // FIX: Filter tasks by project_id
     const { data: tasks } = useSWR<Task[]>(id ? `/api/tasks?project_id=${id}` : null, fetcher);
+    const { data: longTaskTemplates, mutate: reloadLongTaskTemplates } = useSWR<ProjectLongTaskTemplate[]>(
+        id ? `/api/projects/${id}/long-task-templates` : null,
+        fetcher
+    );
 
     const [processing, setProcessing] = useState(false);
     const [isEditing, setIsEditing] = useState(false);
     const [isAddingMilestone, setIsAddingMilestone] = useState(false);
     const [isAddingTask, setIsAddingTask] = useState(false);
+    const [isAddingLongTask, setIsAddingLongTask] = useState(false);
     const [editingMilestoneId, setEditingMilestoneId] = useState<string | null>(null);
     const [milestoneSort, setMilestoneSort] = useState<'asc' | 'desc'>('asc'); // Not used yet but requested
     const [showColorPicker, setShowColorPicker] = useState(false);
@@ -152,6 +159,24 @@ function ProjectDetailContent() {
             showToast("error", "启动失败: " + (err instanceof Error ? err.message : ""));
         } finally {
             setProcessing(false);
+        }
+    };
+
+    const WEEKDAYS = ["一", "二", "三", "四", "五", "六", "日"];
+    const formatLongTaskFrequency = (t: ProjectLongTaskTemplate) => {
+        if (t.frequency_mode === "specific_days") {
+            return `每周 ${t.days_of_week?.map(d => WEEKDAYS[d]).join(" ")}`;
+        }
+        return t.interval_days === 1 ? "每天" : `每 ${t.interval_days} 天`;
+    };
+
+    const handleHideLongTask = async (templateId: string) => {
+        if (!confirm("确认隐藏该长期任务模板？隐藏后仍会继续生成任务。")) return;
+        try {
+            await hideProjectLongTaskTemplate(id, templateId);
+            reloadLongTaskTemplates();
+        } catch (e: any) {
+            alert(e.message || "隐藏失败");
         }
     };
 
@@ -439,6 +464,51 @@ function ProjectDetailContent() {
                 </div>
             </div>
 
+            {/* Long Tasks */}
+            <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                    <h2 className="font-semibold text-lg flex items-center gap-2">
+                        <ListTodo className="w-5 h-5" />
+                        长期任务
+                    </h2>
+                </div>
+
+                {longTaskTemplates && longTaskTemplates.length > 0 ? (
+                    <div className="grid gap-3">
+                        {longTaskTemplates.map((t) => (
+                            <div
+                                key={t.id}
+                                className="p-4 rounded-lg border bg-card flex items-start justify-between"
+                            >
+                                <div className="flex-1">
+                                    <div className="font-medium">{t.title}</div>
+                                    <div className="text-xs text-muted-foreground mt-1 flex flex-wrap gap-2">
+                                        <span className="bg-slate-100 px-2 py-0.5 rounded">
+                                            {formatLongTaskFrequency(t)}
+                                        </span>
+                                        <span className="bg-slate-100 px-2 py-0.5 rounded">
+                                            总周期 {t.total_cycle_days} 天
+                                        </span>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        onClick={() => handleHideLongTask(t.id)}
+                                        className="text-xs px-2 py-1 border border-border rounded hover:bg-muted"
+                                    >
+                                        隐藏
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                ) : (
+                    <div className="text-center py-8 text-muted-foreground border border-dashed rounded-lg">
+                        暂无长期任务
+                    </div>
+                )}
+            </div>
+
             {/* Related Tasks */}
             <div className="space-y-4">
                 <div className="flex items-center justify-between">
@@ -446,13 +516,22 @@ function ProjectDetailContent() {
                         <ListTodo className="w-5 h-5" />
                         相关任务
                     </h2>
-                    <button
-                        onClick={() => setIsAddingTask(true)}
-                        className="text-sm px-3 py-1 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 flex items-center gap-1"
-                    >
-                        <Plus className="w-4 h-4" />
-                        添加相关任务
-                    </button>
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => setIsAddingLongTask(true)}
+                            className="text-sm px-3 py-1 bg-card border border-input rounded-md hover:bg-accent hover:text-accent-foreground flex items-center gap-1"
+                        >
+                            <Plus className="w-4 h-4" />
+                            添加长期任务
+                        </button>
+                        <button
+                            onClick={() => setIsAddingTask(true)}
+                            className="text-sm px-3 py-1 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 flex items-center gap-1"
+                        >
+                            <Plus className="w-4 h-4" />
+                            添加相关任务
+                        </button>
+                    </div>
                 </div>
 
                 {tasks && tasks.length > 0 ? (
@@ -493,6 +572,13 @@ function ProjectDetailContent() {
                 isOpen={isAddingTask}
                 onClose={() => setIsAddingTask(false)}
                 defaultProjectId={id}
+            />
+
+            <CreateLongTaskModal
+                isOpen={isAddingLongTask}
+                onClose={() => setIsAddingLongTask(false)}
+                projectId={id}
+                onSuccess={() => reloadLongTaskTemplates()}
             />
         </div >
     );

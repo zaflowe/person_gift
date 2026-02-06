@@ -30,6 +30,7 @@ class Task(Base):
     
     project_id = Column(String, ForeignKey("projects.id"), nullable=True)
     plan_template_id = Column(String, ForeignKey("plan_templates.id"), nullable=True)
+    long_task_template_id = Column(String, ForeignKey("project_long_task_templates.id"), nullable=True)
     
     # Habit fields
     template_id = Column(String, ForeignKey("habit_templates.id"), nullable=True)
@@ -44,6 +45,7 @@ class Task(Base):
     project = relationship("Project", back_populates="tasks")
     plan_template = relationship("PlanTemplate", back_populates="tasks")
     habit_template = relationship("HabitTemplate", back_populates="tasks")
+    long_task_template = relationship("ProjectLongTaskTemplate", back_populates="tasks")
     evidences = relationship("TaskEvidence", back_populates="task", cascade="all, delete-orphan")
 
 

@@ -34,6 +34,7 @@ class TaskResponse(BaseModel):
     tags: Optional[list[str]] = []
     project_id: Optional[str]
     plan_template_id: Optional[str]
+    long_task_template_id: Optional[str]
     created_at: datetime
     updated_at: datetime
     completed_at: Optional[datetime]
