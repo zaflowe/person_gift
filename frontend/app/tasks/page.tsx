@@ -44,7 +44,7 @@ function TasksContent() {
     // Create a map for project lookup
     const projectMap = projects?.reduce((acc, p) => ({ ...acc, [p.id]: p }), {} as Record<string, Project>) || {};
 
-    const [filter, setFilter] = useState<string>("all");
+    const [filter, setFilter] = useState<string>("open");
     const [isCreateOpen, setIsCreateOpen] = useState(false);
 
     // Drawer State
@@ -54,6 +54,8 @@ function TasksContent() {
 
     // Filter Logic
     const filteredTasks = tasks?.filter(t => {
+        if (filter === "all") return t.status !== "DONE" && t.status !== "EXCUSED";
+        if (filter === "completed") return t.status === "DONE" || t.status === "EXCUSED";
         if (filter === "overdue") return t.status === "OVERDUE";
         if (filter === "open") return t.status === "OPEN";
         if (filter === "evidence") return t.status === "EVIDENCE_SUBMITTED";
@@ -75,7 +77,8 @@ function TasksContent() {
     // Counts for Tabs
     const getCount = (key: string) => {
         if (!tasks) return 0;
-        if (key === 'all') return tasks.length;
+        if (key === 'all') return tasks.filter(t => t.status !== 'DONE' && t.status !== 'EXCUSED').length;
+        if (key === 'completed') return tasks.filter(t => t.status === 'DONE' || t.status === 'EXCUSED').length;
         if (key === 'open') return tasks.filter(t => t.status === 'OPEN').length;
         if (key === 'overdue') return tasks.filter(t => t.status === 'OVERDUE').length;
         if (key === 'evidence') return tasks.filter(t => t.status === 'EVIDENCE_SUBMITTED').length;
@@ -121,12 +124,13 @@ function TasksContent() {
                 {/* Tabs with Counts */}
                 <div className="flex items-center gap-8 border-b border-slate-100 overflow-x-auto no-scrollbar mt-6">
                     {[
-                        { key: "all", label: "全部" },
                         { key: "open", label: "进行中" },
+                        { key: "all", label: "待办" }, // Renamed from "全部" to "待办" (Active) for clarity, or keep "全部" but meaning active
                         { key: "unscheduled", label: "未安排" },
                         { key: "scheduled", label: "已安排" },
                         { key: "overdue", label: "已逾期", alert: true },
-                        { key: "evidence", label: "待验收" }
+                        { key: "evidence", label: "待验收" },
+                        { key: "completed", label: "已完成" }
                     ].map(f => {
                         const count = getCount(f.key);
                         const isActive = filter === f.key;
