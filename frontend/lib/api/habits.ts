@@ -12,6 +12,7 @@ export interface HabitTemplate {
     default_end_time?: string;
     evidence_type: "none" | "image" | "text" | "number";
     evidence_schema?: string;
+    evidence_criteria?: string;
 }
 
 export interface FixedBlock {

@@ -29,6 +29,7 @@ class HabitCreate(BaseModel):
     default_end_time: Optional[str] = None
     evidence_type: str = "none"
     evidence_schema: Optional[str] = None
+    evidence_criteria: Optional[str] = None
 
 class HabitUpdate(BaseModel):
     title: Optional[str] = None
@@ -41,6 +42,7 @@ class HabitUpdate(BaseModel):
     default_end_time: Optional[str] = None
     evidence_type: Optional[str] = None
     evidence_schema: Optional[str] = None
+    evidence_criteria: Optional[str] = None
 
 class FixedBlockCreate(BaseModel):
     title: str

@@ -18,6 +18,8 @@ export function HabitSidebar({ className }: { className?: string }) {
     const [specificDays, setSpecificDays] = useState<number[]>([]);
     const [startTime, setStartTime] = useState("");
     const [endTime, setEndTime] = useState("");
+    const [evidenceType, setEvidenceType] = useState<"none" | "image" | "text" | "number">("none");
+    const [evidenceCriteria, setEvidenceCriteria] = useState("");
     const [saving, setSaving] = useState(false);
 
     useEffect(() => {
@@ -48,6 +50,8 @@ export function HabitSidebar({ className }: { className?: string }) {
                 days_of_week: freqMode === "specific_days" ? specificDays : [],
                 default_start_time: startTime || undefined,
                 default_end_time: endTime || undefined,
+                evidence_type: evidenceType,
+                evidence_criteria: evidenceType !== "none" ? evidenceCriteria : undefined,
                 enabled: true
             });
             setIsCreateOpen(false);
@@ -92,6 +96,8 @@ export function HabitSidebar({ className }: { className?: string }) {
         setSpecificDays([]);
         setStartTime("");
         setEndTime("");
+        setEvidenceType("none");
+        setEvidenceCriteria("");
     };
 
     const toggleDay = (day: number) => {
@@ -262,6 +268,32 @@ export function HabitSidebar({ className }: { className?: string }) {
                             </div>
                         </div>
                     </div>
+
+                        <div className="space-y-1.5">
+                            <label className="text-xs font-medium text-slate-500">????</label>
+                            <select
+                                value={evidenceType}
+                                onChange={(e) => setEvidenceType(e.target.value as any)}
+                                className="w-full border border-slate-200 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-primary/20 outline-none"
+                            >
+                                <option value="none">???? (???)</option>
+                                <option value="image">???? (AI ??)</option>
+                                <option value="text">????</option>
+                                <option value="number">????</option>
+                            </select>
+                        </div>
+
+                        {evidenceType !== "none" && (
+                            <div className="space-y-1.5 bg-slate-50 p-3 rounded-md border border-slate-200">
+                                <textarea
+                                    value={evidenceCriteria}
+                                    onChange={(e) => setEvidenceCriteria(e.target.value)}
+                                    className="w-full bg-transparent border-none text-xs focus:ring-0 p-0 placeholder:text-slate-400"
+                                    placeholder="?? AI ???? (Prompts)..."
+                                    rows={2}
+                                />
+                            </div>
+                        )}
                     <DialogFooter>
                         <button
                             onClick={() => setIsCreateOpen(false)}

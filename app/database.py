@@ -39,6 +39,7 @@ def init_db():
     # Lightweight, non-destructive migration for new columns in existing DBs.
     try:
         _ensure_tasks_long_template_column()
+        _ensure_habit_evidence_criteria_column()
     except Exception as e:
         print(f"⚠️ Migration warning: {e}")
 
@@ -57,3 +58,19 @@ def _ensure_tasks_long_template_column():
             conn.execute(text("ALTER TABLE tasks ADD COLUMN long_task_template_id VARCHAR"))
         else:
             conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS long_task_template_id VARCHAR"))
+
+
+def _ensure_habit_evidence_criteria_column():
+    inspector = inspect(engine)
+    if "habit_templates" not in inspector.get_table_names():
+        return
+
+    columns = [col["name"] for col in inspector.get_columns("habit_templates")]
+    if "evidence_criteria" in columns:
+        return
+
+    with engine.begin() as conn:
+        if settings.database_url.startswith("sqlite"):
+            conn.execute(text("ALTER TABLE habit_templates ADD COLUMN evidence_criteria TEXT"))
+        else:
+            conn.execute(text("ALTER TABLE habit_templates ADD COLUMN IF NOT EXISTS evidence_criteria TEXT"))

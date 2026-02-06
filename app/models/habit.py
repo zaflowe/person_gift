@@ -35,6 +35,7 @@ class HabitTemplate(Base):
     # Evidence configuration
     evidence_type = Column(String, default="none") # none/image/text/number
     evidence_schema = Column(String, nullable=True) # e.g. unit for number
+    evidence_criteria = Column(Text, nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)

@@ -34,7 +34,8 @@ class HabitService:
             default_start_time=habit_data.get("default_start_time"),
             default_end_time=habit_data.get("default_end_time"),
             evidence_type=habit_data.get("evidence_type", "none"),
-            evidence_schema=habit_data.get("evidence_schema")
+            evidence_schema=habit_data.get("evidence_schema"),
+            evidence_criteria=habit_data.get("evidence_criteria")
         )
         db.add(habit)
         db.commit()
@@ -195,6 +196,7 @@ class HabitService:
                         duration=duration,
                         is_time_blocked=bool(scheduled_time),
                         evidence_type=habit.evidence_type,
+                        evidence_criteria=habit.evidence_criteria,
                         template_id=habit.id,
                         generated_for_date=start_of_day,
                         tags=json.dumps(["习惯"]) # Tag as Habit
