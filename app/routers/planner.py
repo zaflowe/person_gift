@@ -190,3 +190,30 @@ async def commit_plan(
     except Exception as e:
         logger.error(f"Unexpected error in commit: {str(e)}")
         raise HTTPException(status_code=500, detail="提交失败，请稍后重试")
+
+
+@router.get("/latest", response_model=PlanResponse)
+async def get_latest_plan(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get the latest planning session for the current user.
+    Useful for restoring plan review UI after refresh.
+    """
+    session = db.query(PlanningSession).filter(
+        PlanningSession.user_id == current_user.id
+    ).order_by(PlanningSession.created_at.desc()).first()
+
+    if not session:
+        raise HTTPException(status_code=404, detail="Planning session not found")
+
+    try:
+        plan = json.loads(session.plan_json)
+    except Exception:
+        raise HTTPException(status_code=500, detail="Invalid plan data")
+
+    return PlanResponse(
+        session_id=session.id,
+        plan=plan
+    )

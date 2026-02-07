@@ -13,6 +13,8 @@ from app.dependencies import get_current_user
 from app.models.user import User
 from app.models.conversation import ConversationSession
 from app.models.task import Task
+from app.models.habit import HabitTemplate, FixedBlock
+from app.models.project import Project
 from app.schemas.conversation import (
     ChatRequest,
     ChatResponse,
@@ -584,6 +586,93 @@ async def reset_conversation(
         stage="intent",
         intent=None
     )
+
+
+@router.post("/login-greeting")
+async def login_greeting(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Inject a random, data-driven greeting message on each login.
+    """
+    # Get or create conversation session
+    session = db.query(ConversationSession).filter(
+        ConversationSession.user_id == current_user.id
+    ).order_by(ConversationSession.created_at.desc()).first()
+
+    if not session:
+        session = ConversationSession(
+            id=str(uuid.uuid4()),
+            user_id=current_user.id,
+            stage="intent",
+            messages="[]",
+            collected_info="{}"
+        )
+        db.add(session)
+        db.commit()
+
+    messages = json.loads(session.messages) if session.messages else []
+
+    # Gather lightweight stats
+    open_statuses = ["OPEN", "EVIDENCE_SUBMITTED", "OVERDUE"]
+    open_count = db.query(Task).filter(
+        Task.user_id == current_user.id,
+        Task.status.in_(open_statuses)
+    ).count()
+    overdue_count = db.query(Task).filter(
+        Task.user_id == current_user.id,
+        Task.status == "OVERDUE"
+    ).count()
+    habits_count = db.query(HabitTemplate).filter(
+        HabitTemplate.user_id == current_user.id
+    ).count()
+    fixed_count = db.query(FixedBlock).filter(
+        FixedBlock.user_id == current_user.id
+    ).count()
+    active_projects = db.query(Project).filter(
+        Project.user_id == current_user.id,
+        Project.status.in_(["PROPOSED", "ACTIVE"])
+    ).count()
+
+    next_task = db.query(Task).filter(
+        Task.user_id == current_user.id,
+        Task.status.in_(open_statuses),
+        Task.deadline.isnot(None)
+    ).order_by(Task.deadline.asc()).first()
+
+    next_task_title = next_task.title if next_task else None
+
+    templates = [
+        "今天也见到你了。待办 {open} 项，逾期 {overdue} 项。先动一个最小任务就能破局。",
+        "你的习惯 {habits} 个、固定时间块 {fixed} 个，节奏已经在了。",
+        "当前项目 {projects} 个在推进。小步快走就能赢。",
+        "我随便说一句：别等完美，先做 10 分钟。待办 {open} 项在排队。",
+    ]
+
+    if next_task_title:
+        templates.append(f"最近截止的任务是「{next_task_title}」，先把它处理掉会很爽。")
+
+    import random
+    message_text = random.choice(templates).format(
+        open=open_count,
+        overdue=overdue_count,
+        habits=habits_count,
+        fixed=fixed_count,
+        projects=active_projects
+    )
+
+    new_msg = {
+        "role": "assistant",
+        "content": message_text,
+        "type": "login_greeting",
+        "timestamp": datetime.utcnow().isoformat()
+    }
+    messages.append(new_msg)
+    session.messages = json.dumps(messages, ensure_ascii=False)
+    db.commit()
+
+    return {"message": new_msg}
 @router.post("/check-reminder")
 async def check_daily_reminder(
     current_user: User = Depends(get_current_user),

@@ -270,16 +270,16 @@ export function HabitSidebar({ className }: { className?: string }) {
                     </div>
 
                         <div className="space-y-1.5">
-                            <label className="text-xs font-medium text-slate-500">????</label>
+                            <label className="text-xs font-medium text-slate-500">验收方式</label>
                             <select
                                 value={evidenceType}
                                 onChange={(e) => setEvidenceType(e.target.value as any)}
                                 className="w-full border border-slate-200 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-primary/20 outline-none"
                             >
-                                <option value="none">???? (???)</option>
-                                <option value="image">???? (AI ??)</option>
-                                <option value="text">????</option>
-                                <option value="number">????</option>
+                                <option value="none">自觉完成 (无强制)</option>
+                                <option value="image">拍照打卡 (AI 审核)</option>
+                                <option value="text">文字总结</option>
+                                <option value="number">数值记录</option>
                             </select>
                         </div>
 
@@ -289,7 +289,7 @@ export function HabitSidebar({ className }: { className?: string }) {
                                     value={evidenceCriteria}
                                     onChange={(e) => setEvidenceCriteria(e.target.value)}
                                     className="w-full bg-transparent border-none text-xs focus:ring-0 p-0 placeholder:text-slate-400"
-                                    placeholder="?? AI ???? (Prompts)..."
+                                    placeholder="输入 AI 审核标准 (Prompts)..."
                                     rows={2}
                                 />
                             </div>

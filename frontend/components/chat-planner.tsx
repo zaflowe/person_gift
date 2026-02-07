@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { MessageCircle, X, Send, Loader2, RotateCcw } from "lucide-react";
 import { AppCard } from "@/components/ui/app-card";
 import { getToken, cn, fetcher, apiPost } from "@/lib/utils";
-import { sendChatMessage } from "@/lib/api/conversation";
+import { sendChatMessage, requestLoginGreeting } from "@/lib/api/conversation";
 import { commitPlan } from "@/lib/api/planner";
 import { createQuickTask } from "@/lib/api/tasks";
 
@@ -81,10 +81,26 @@ export default function ChatPlanner({ embedded = false, className }: { embedded?
                 const data = await fetcher<ConversationState>("/api/conversation/current");
                 setConversationId(data.conversation_id);
                 setMessages(data.messages);
-                // We might need to handle specific stages (planning, etc.) if we want to restore UI state perfectly,
-                // but for MVP, just restoring messages is key. 
-                // Advanced: if stage == 'planning', we might need to fetch the plan. 
-                // For now, assume if messages restored, conversation continues.
+
+                // Restore plan draft if we are in planning stage
+                if (data.stage === "planning") {
+                    try {
+                        const planData = await fetcher<PlanSession>("/api/planner/latest");
+                        setCurrentPlan(planData);
+                    } catch {
+                        // Ignore if no plan found
+                    }
+                }
+
+                // Inject a random greeting on each login/open
+                if (token) {
+                    try {
+                        const greeting = await requestLoginGreeting(token);
+                        setMessages(prev => [...prev, greeting.message]);
+                    } catch {
+                        // Non-blocking
+                    }
+                }
             } catch (e) {
                 console.error("Failed to load conversation", e);
             }

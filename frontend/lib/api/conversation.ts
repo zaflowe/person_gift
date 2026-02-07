@@ -22,6 +22,15 @@ export interface ChatResponse {
     intent?: string;
 }
 
+export interface LoginGreetingResponse {
+    message: {
+        role: "assistant";
+        content: string;
+        timestamp?: string;
+        type?: string;
+    };
+}
+
 export async function sendChatMessage(
     message: string,
     token: string,
@@ -42,6 +51,24 @@ export async function sendChatMessage(
     if (!response.ok) {
         const error = await response.json();
         throw new Error(error.detail || "对话失败");
+    }
+
+    return response.json();
+}
+
+export async function requestLoginGreeting(token: string): Promise<LoginGreetingResponse> {
+    const response = await fetch("/api/conversation/login-greeting", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({}),
+    });
+
+    if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.detail || "登录问候生成失败");
     }
 
     return response.json();
