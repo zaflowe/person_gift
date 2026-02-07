@@ -158,6 +158,13 @@ async def chat(
                     collected_info,
                     messages
                 )
+
+                # Enforce max 2 rounds of questions
+                if not info_complete:
+                    collected_info["gather_rounds"] = collected_info.get("gather_rounds", 0) + 1
+                    if collected_info["gather_rounds"] >= 2:
+                        info_complete = True
+                        ai_message = "已完成两轮信息确认，进入简报确认阶段。"
                 
                 messages.append({"role": "assistant", "content": ai_message})
                 session.messages = json.dumps(messages, ensure_ascii=False)
@@ -228,6 +235,14 @@ async def chat(
             
             messages.append({"role": "assistant", "content": ai_message})
             
+            # Enforce max 2 rounds of questions
+            if not info_complete:
+                collected_info["gather_rounds"] = collected_info.get("gather_rounds", 0) + 1
+                if collected_info["gather_rounds"] >= 2:
+                    info_complete = True
+                    ai_message = "已完成两轮信息确认，进入简报确认阶段。"
+                    messages[-1] = {"role": "assistant", "content": ai_message}
+
             if info_complete:
                 # Ready for Brief Review (Gatekeeper)
                 session.stage = "brief_review"
