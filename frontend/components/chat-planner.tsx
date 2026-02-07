@@ -143,7 +143,12 @@ export default function ChatPlanner({ embedded = false, className }: { embedded?
             } else if (response.action_type === "update_plan") {
                 // Update existing plan with refined version
                 setCurrentPlan((prev) => {
-                    if (!prev) return null;
+                    if (!prev) {
+                        return {
+                            session_id: response.conversation_id,
+                            plan: response.plan as unknown as ProjectPlan
+                        };
+                    }
                     return {
                         ...prev,
                         plan: response.plan as unknown as ProjectPlan,
