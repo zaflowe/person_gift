@@ -19,7 +19,7 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     """Response from the chat endpoint."""
     conversation_id: str
-    action_type: str = Field(..., pattern="^(ask_more|create_task|create_project|reply|review_task|confirm_brief)$")
+    action_type: str = Field(..., pattern="^(ask_more|create_task|create_project|reply|review_task|confirm_brief|update_plan)$")
     message: str  # AI's response message
     
     # Optional fields depending on action_type
