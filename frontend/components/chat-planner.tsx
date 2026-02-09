@@ -85,6 +85,7 @@ export default function ChatPlanner({ embedded = false, className }: { embedded?
     const [isOpen, setIsOpen] = useState(embedded);
     const [messages, setMessages] = useState<Message[]>([]);
     const [input, setInput] = useState("");
+    const inputRef = useRef<HTMLTextAreaElement | null>(null);
     const [loading, setLoading] = useState(false);
     const [conversationId, setConversationId] = useState<string | undefined>();
     const [currentPlan, setCurrentPlan] = useState<PlanSession | null>(null);
@@ -185,6 +186,21 @@ export default function ChatPlanner({ embedded = false, className }: { embedded?
         if (!messagesRef.current) return;
         messagesRef.current.scrollTop = messagesRef.current.scrollHeight;
     }, [messages.length, isOpen]);
+
+    const autosizeInput = () => {
+        const el = inputRef.current;
+        if (!el) return;
+        const minHeight = 48;
+        const maxHeight = 120; // ~5 lines at 20px line-height
+        el.style.height = "0px";
+        const next = Math.min(Math.max(el.scrollHeight, minHeight), maxHeight);
+        el.style.height = `${next}px`;
+        el.style.overflowY = el.scrollHeight > maxHeight ? "auto" : "hidden";
+    };
+
+    useEffect(() => {
+        autosizeInput();
+    }, [input]);
 
 
     const handleSend = async () => {
@@ -815,14 +831,20 @@ export default function ChatPlanner({ embedded = false, className }: { embedded?
                             </div>
                         )}
                         <div className="flex gap-3 items-center relative">
-                            <input
-                                type="text"
+                            <textarea
+                                ref={inputRef}
+                                rows={1}
                                 value={input}
                                 onChange={(e) => setInput(e.target.value)}
-                                onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSend()}
+                                onKeyDown={(e) => {
+                                    if (e.key === "Enter" && !e.shiftKey) {
+                                        e.preventDefault();
+                                        handleSend();
+                                    }
+                                }}
                                 placeholder="输入你的想法..."
                                 disabled={loading}
-                                className="flex-1 h-12 pl-5 pr-4 bg-[var(--surface-hover)] border border-[var(--border)] rounded-full text-[14px] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]/20 focus:border-[var(--primary)] transition-all disabled:opacity-50 placeholder-[var(--muted)] shadow-inner"
+                                className="flex-1 min-h-[48px] max-h-[120px] px-5 py-3 bg-[var(--surface-hover)] border border-[var(--border)] rounded-2xl text-[14px] leading-5 focus:outline-none focus:ring-2 focus:ring-[var(--primary)]/20 focus:border-[var(--primary)] transition-all disabled:opacity-50 placeholder-[var(--muted)] shadow-inner resize-none"
                             />
                             <button
                                 onClick={handleSend}
