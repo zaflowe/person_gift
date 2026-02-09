@@ -164,12 +164,12 @@ async def chat(
                     messages
                 )
 
-                # Enforce max 2 rounds of questions
+                # Enforce max 4 rounds of questions
                 if not info_complete:
                     collected_info["gather_rounds"] = collected_info.get("gather_rounds", 0) + 1
-                    if collected_info["gather_rounds"] >= 2:
+                    if collected_info["gather_rounds"] >= 4:
                         info_complete = True
-                        ai_message = "Info confirmed twice. Moving to brief confirmation."
+                        ai_message = "Info confirmed. Moving to brief confirmation."
 
                 messages.append({"role": "assistant", "content": ai_message})
                 new_session.messages = json.dumps(messages, ensure_ascii=False)
@@ -225,12 +225,12 @@ async def chat(
             
             messages.append({"role": "assistant", "content": ai_message})
             
-            # Enforce max 2 rounds of questions
+            # Enforce max 4 rounds of questions
             if not info_complete:
                 collected_info["gather_rounds"] = collected_info.get("gather_rounds", 0) + 1
-                if collected_info["gather_rounds"] >= 2:
+                if collected_info["gather_rounds"] >= 4:
                     info_complete = True
-                    ai_message = "Info confirmed twice. Moving to brief confirmation."
+                    ai_message = "Info confirmed. Moving to brief confirmation."
                     messages[-1] = {"role": "assistant", "content": ai_message}
 
             if info_complete:
@@ -467,12 +467,12 @@ async def chat(
                     messages
                 )
 
-                # Enforce max 2 rounds of questions
+                # Enforce max 4 rounds of questions
                 if not info_complete:
                     collected_info["gather_rounds"] = collected_info.get("gather_rounds", 0) + 1
-                    if collected_info["gather_rounds"] >= 2:
+                    if collected_info["gather_rounds"] >= 4:
                         info_complete = True
-                        ai_message = "Info confirmed twice. Moving to brief confirmation."
+                        ai_message = "Info confirmed. Moving to brief confirmation."
 
                 messages.append({"role": "assistant", "content": ai_message})
                 new_session.messages = json.dumps(messages, ensure_ascii=False)
