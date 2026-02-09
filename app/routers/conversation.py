@@ -158,8 +158,7 @@ async def chat(
                 )
 
             elif intent == "complex_project":
-                # Move to gathering stage
-                session.stage = "gathering"
+                new_session.stage = "gathering"
                 info_complete, ai_message = conversation_service.gather_information(
                     collected_info,
                     messages
@@ -170,50 +169,33 @@ async def chat(
                     collected_info["gather_rounds"] = collected_info.get("gather_rounds", 0) + 1
                     if collected_info["gather_rounds"] >= 2:
                         info_complete = True
-                        ai_message = "???????????????????"
-                
+                        ai_message = "Info confirmed twice. Moving to brief confirmation."
+
                 messages.append({"role": "assistant", "content": ai_message})
-                session.messages = json.dumps(messages, ensure_ascii=False)
-                session.collected_info = json.dumps(collected_info, ensure_ascii=False)
-                
+                new_session.messages = json.dumps(messages, ensure_ascii=False)
+                new_session.collected_info = json.dumps(collected_info, ensure_ascii=False)
+
                 if info_complete:
-                    session.stage = "brief_review"
+                    new_session.stage = "brief_review"
                     db.commit()
                     return ChatResponse(
-                        conversation_id=session.id,
+                        conversation_id=new_session.id,
                         action_type="confirm_brief",
-                        message="????????????????Brief???????????????",
+                        message="Info collected. Please confirm the brief to generate the plan.",
                         plan=collected_info,
-                        stage=session.stage,
+                        stage=new_session.stage,
                         intent=intent
                     )
-                
+
                 db.commit()
                 return ChatResponse(
-                    conversation_id=session.id,
+                    conversation_id=new_session.id,
                     action_type="ask_more",
                     message=ai_message,
-                    stage=session.stage,
+                    stage=new_session.stage,
                     intent=intent
                 )
-            
-            elif intent == "question":
-                # Answer the question
-                answer = conversation_service.answer_question(request.message)
-                messages.append({"role": "assistant", "content": answer})
-                session.stage = "completed"
-                session.completed_at = datetime.utcnow()
-                session.messages = json.dumps(messages, ensure_ascii=False)
-                db.commit()
-                
-                return ChatResponse(
-                    conversation_id=session.id,
-                    action_type="reply",
-                    message=answer,
-                    stage=session.stage,
-                    intent=intent
-                )
-            
+
             else:  # chat
                 # Simple reply
                 ai_message = "你好！我可以帮你规划任务和项目。有什么我能帮到你的吗？"
@@ -248,7 +230,7 @@ async def chat(
                 collected_info["gather_rounds"] = collected_info.get("gather_rounds", 0) + 1
                 if collected_info["gather_rounds"] >= 2:
                     info_complete = True
-                    ai_message = "已完成两轮信息确认，进入简报确认阶段。"
+                    ai_message = "Info confirmed twice. Moving to brief confirmation."
                     messages[-1] = {"role": "assistant", "content": ai_message}
 
             if info_complete:
@@ -262,7 +244,7 @@ async def chat(
                 return ChatResponse(
                     conversation_id=session.id,
                     action_type="confirm_brief",
-                    message="信息已收集完毕。请确认项目简报（Brief），通过后将为你生成详细方案。",
+                    message="Info collected. Please confirm the brief to generate the plan.",
                     plan=collected_info,  # Reusing plan field to pass brief data for now
                     stage=session.stage,
                     intent=session.intent
@@ -337,22 +319,12 @@ async def chat(
                     PlanningSession.id == session.planning_session_id,
                     PlanningSession.user_id == current_user.id
                 ).first()
-            
-            # Fallback to latest UNCOMMITTED session if link missing
+
             if planning_session and planning_session.project_id:
                 planning_session = None
 
             if not planning_session:
-                planning_session = db.query(PlanningSession).filter(
-                    PlanningSession.user_id == current_user.id,
-                    PlanningSession.project_id.is_(None)
-                ).order_by(PlanningSession.created_at.desc()).first()
-                if planning_session and session.planning_session_id != planning_session.id:
-                    session.planning_session_id = planning_session.id
-                    db.commit()
-            
-            if not planning_session:
-                # No active planning session, regenerate a fresh plan
+                # No active planning session, regenerate a fresh plan tied to this conversation
                 context = {
                     "today": datetime.now().strftime("%Y-%m-%d"),
                     "timezone": "Asia/Shanghai"
@@ -383,12 +355,12 @@ async def chat(
                     conversation_id=session.id,
                     planning_session_id=new_planning_session_id,
                     action_type="create_project",
-                    message="已为你重新生成计划草稿，请确认或继续修改。",
+                    message="Draft plan generated. Please review or edit.",
                     plan=plan,
                     stage=session.stage,
                     intent=session.intent
                 )
-            
+
             # Refine the plan
             current_plan = json.loads(planning_session.plan_json)
             
@@ -494,12 +466,31 @@ async def chat(
                     collected_info,
                     messages
                 )
-                
+
+                # Enforce max 2 rounds of questions
+                if not info_complete:
+                    collected_info["gather_rounds"] = collected_info.get("gather_rounds", 0) + 1
+                    if collected_info["gather_rounds"] >= 2:
+                        info_complete = True
+                        ai_message = "Info confirmed twice. Moving to brief confirmation."
+
                 messages.append({"role": "assistant", "content": ai_message})
                 new_session.messages = json.dumps(messages, ensure_ascii=False)
                 new_session.collected_info = json.dumps(collected_info, ensure_ascii=False)
+
+                if info_complete:
+                    new_session.stage = "brief_review"
+                    db.commit()
+                    return ChatResponse(
+                        conversation_id=new_session.id,
+                        action_type="confirm_brief",
+                        message="Info collected. Please confirm the brief to generate the plan.",
+                        plan=collected_info,
+                        stage=new_session.stage,
+                        intent=intent
+                    )
+
                 db.commit()
-                
                 return ChatResponse(
                     conversation_id=new_session.id,
                     action_type="ask_more",
@@ -507,7 +498,7 @@ async def chat(
                     stage=new_session.stage,
                     intent=intent
                 )
-            
+
             else:
                 # question or chat
                 if intent == "question":
@@ -611,20 +602,6 @@ async def get_current_conversation(
     
     messages = json.loads(session.messages) if session.messages else []
 
-    if session.stage == "planning" and not session.planning_session_id:
-        try:
-            from app.models.planning import PlanningSession
-            planning_session = db.query(PlanningSession).filter(
-                PlanningSession.user_id == current_user.id,
-                PlanningSession.project_id.is_(None)
-            ).order_by(PlanningSession.created_at.desc()).first()
-            if planning_session:
-                session.planning_session_id = planning_session.id
-                db.commit()
-        except Exception:
-            # Non-blocking: keep null if lookup fails
-            pass
-    
     return ConversationStateResponse(
         conversation_id=session.id,
         messages=messages,
@@ -904,4 +881,3 @@ async def inject_reminder_message(
     except Exception as e:
         logger.error(f"Inject reminder failed: {e}")
         raise HTTPException(status_code=500, detail=f"Injection failed: {str(e)}")
-

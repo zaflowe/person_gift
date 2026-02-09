@@ -148,11 +148,9 @@ export default function ChatPlanner({ embedded = false, className }: { embedded?
                 setMessages(data.messages);
 
                 // Restore plan draft if we are in planning stage
-                if (data.stage === "planning") {
+                if (data.stage === "planning" && data.planning_session_id) {
                     try {
-                        const planUrl = data.planning_session_id
-                            ? `${API_BASE_URL}/planner/${data.planning_session_id}`
-                            : `${API_BASE_URL}/planner/latest`;
+                        const planUrl = `${API_BASE_URL}/planner/${data.planning_session_id}`;
                         const res = await fetch(planUrl, {
                             headers: { Authorization: `Bearer ${token}` }
                         });
