@@ -28,9 +28,11 @@ from app.services.planner_service import planner_service
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/conversation", tags=["conversation"])
+api_router = APIRouter(prefix="/api/conversation", tags=["conversation"])
 
 
 @router.post("/chat", response_model=ChatResponse)
+@api_router.post("/chat", response_model=ChatResponse)
 async def chat(
     request: ChatRequest,
     current_user: User = Depends(get_current_user),
@@ -306,11 +308,13 @@ async def chat(
             
             # Update session to planning stage
             session.stage = "planning"
+            session.planning_session_id = planning_session_id
             db.commit()
             
             return ChatResponse(
-                conversation_id=planning_session_id,  # Return planning_session_id
-                action_type="create_project", # This triggers Plan Review on frontend
+                conversation_id=session.id,
+                planning_session_id=planning_session_id,
+                action_type="create_project",  # This triggers Plan Review on frontend
                 message="已为你生成详细计划草稿，你可以修改或确认：",
                 plan=plan,
                 stage=session.stage,
@@ -321,22 +325,65 @@ async def chat(
         
         elif session.stage == "planning":
             # [STICKY SESSION]
-            # Verify if there is an active planning session
+            # Use the planning_session linked to this conversation
             from app.models.planning import PlanningSession
+            planning_session = None
+            if session.planning_session_id:
+                planning_session = db.query(PlanningSession).filter(
+                    PlanningSession.id == session.planning_session_id,
+                    PlanningSession.user_id == current_user.id
+                ).first()
             
-            # Find the latest planning session for this conversation? 
-            # Ideally we should have linked it, but for now filtering by user + recent
-            # Or better, store planning_session_id in ConversationSession (add column later)
-            # For now, let's query the latest PlanningSession for this user
-            planning_session = db.query(PlanningSession).filter(
-                PlanningSession.user_id == current_user.id
-            ).order_by(PlanningSession.created_at.desc()).first()
+            # Fallback to latest UNCOMMITTED session if link missing
+            if planning_session and planning_session.project_id:
+                planning_session = None
+
+            if not planning_session:
+                planning_session = db.query(PlanningSession).filter(
+                    PlanningSession.user_id == current_user.id,
+                    PlanningSession.project_id.is_(None)
+                ).order_by(PlanningSession.created_at.desc()).first()
+                if planning_session and session.planning_session_id != planning_session.id:
+                    session.planning_session_id = planning_session.id
+                    db.commit()
             
             if not planning_session:
-                # Should not happen if flow is correct, but safe fallback
-                session.stage = "completed"
+                # No active planning session, regenerate a fresh plan
+                context = {
+                    "today": datetime.now().strftime("%Y-%m-%d"),
+                    "timezone": "Asia/Shanghai"
+                }
+                planning_message = request.message
+                try:
+                    collected_info = json.loads(session.collected_info) if session.collected_info else {}
+                    planning_message = collected_info.get("goal", request.message)
+                except Exception:
+                    pass
+
+                plan = planner_service.generate_plan(planning_message, context)
+                new_planning_session_id = str(uuid.uuid4())
+                new_planning_session = PlanningSession(
+                    id=new_planning_session_id,
+                    user_id=current_user.id,
+                    message=planning_message,
+                    plan_json=json.dumps(plan, ensure_ascii=False)
+                )
+                db.add(new_planning_session)
                 db.commit()
-                return await chat(request, current_user, db) # Re-enter as completed -> new
+
+                session.stage = "planning"
+                session.planning_session_id = new_planning_session_id
+                db.commit()
+
+                return ChatResponse(
+                    conversation_id=session.id,
+                    planning_session_id=new_planning_session_id,
+                    action_type="create_project",
+                    message="已为你重新生成计划草稿，请确认或继续修改。",
+                    plan=plan,
+                    stage=session.stage,
+                    intent=session.intent
+                )
             
             # Refine the plan
             current_plan = json.loads(planning_session.plan_json)
@@ -372,8 +419,9 @@ async def chat(
             db.commit()
             
             return ChatResponse(
-                conversation_id=planning_session.id, # Keep returning planning ID
-                action_type="update_plan", # Frontend should update state, not create new
+                conversation_id=session.id,
+                planning_session_id=planning_session.id,
+                action_type="update_plan",  # Frontend should update state, not create new
                 message=extra_msg,
                 plan=refined_plan,
                 stage=session.stage,
@@ -488,6 +536,7 @@ async def chat(
 
 
 @router.post("/tasks/quick-create", response_model=QuickTaskResponse)
+@api_router.post("/tasks/quick-create", response_model=QuickTaskResponse)
 async def quick_create_task(
     request: QuickTaskRequest,
     current_user: User = Depends(get_current_user),
@@ -530,8 +579,10 @@ class ConversationStateResponse(BaseModel):
     messages: List[dict]
     stage: str
     intent: Optional[str]
+    planning_session_id: Optional[str] = None
 
 @router.get("/current", response_model=ConversationStateResponse)
+@api_router.get("/current", response_model=ConversationStateResponse)
 async def get_current_conversation(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -555,15 +606,31 @@ async def get_current_conversation(
         db.commit()
     
     messages = json.loads(session.messages) if session.messages else []
+
+    if session.stage == "planning" and not session.planning_session_id:
+        try:
+            from app.models.planning import PlanningSession
+            planning_session = db.query(PlanningSession).filter(
+                PlanningSession.user_id == current_user.id,
+                PlanningSession.project_id.is_(None)
+            ).order_by(PlanningSession.created_at.desc()).first()
+            if planning_session:
+                session.planning_session_id = planning_session.id
+                db.commit()
+        except Exception:
+            # Non-blocking: keep null if lookup fails
+            pass
     
     return ConversationStateResponse(
         conversation_id=session.id,
         messages=messages,
         stage=session.stage,
-        intent=session.intent
+        intent=session.intent,
+        planning_session_id=session.planning_session_id
     )
 
 @router.post("/reset", response_model=ConversationStateResponse)
+@api_router.post("/reset", response_model=ConversationStateResponse)
 async def reset_conversation(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -584,11 +651,13 @@ async def reset_conversation(
         conversation_id=session.id,
         messages=[],
         stage="intent",
-        intent=None
+        intent=None,
+        planning_session_id=None
     )
 
 
 @router.post("/login-greeting")
+@api_router.post("/login-greeting")
 async def login_greeting(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)

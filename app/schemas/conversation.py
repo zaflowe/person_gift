@@ -25,6 +25,7 @@ class ChatResponse(BaseModel):
     # Optional fields depending on action_type
     plan: Optional[Dict[str, Any]] = None  # For create_project
     task: Optional[Dict[str, Any]] = None  # For create_task
+    planning_session_id: Optional[str] = None  # For plan commit/restore
     
     # Metadata
     stage: str  # current conversation stage

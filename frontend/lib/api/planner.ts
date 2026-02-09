@@ -1,6 +1,9 @@
 // Planner API client functions
 
-const API_BASE = "";
+const API_BASE =
+    process.env.NEXT_PUBLIC_API_BASE ||
+    process.env.NEXT_PUBLIC_API_URL ||
+    "";
 
 export interface PlanRequest {
     message: string;

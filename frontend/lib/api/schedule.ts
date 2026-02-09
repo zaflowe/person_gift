@@ -1,6 +1,6 @@
 // Schedule API client
 
-const API_BASE = "";
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "";
 
 export interface TimeBlock {
     task_id: string;

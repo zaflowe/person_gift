@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { cn } from "@/lib/utils";
+import { useEffect } from "react";
+import { cn, API_BASE_URL } from "@/lib/utils";
 import { LayoutDashboard, CheckSquare, Folder, Shield, Settings, LogOut, Calendar } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 
@@ -19,23 +20,20 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     const { user, logout } = useAuth();
 
     // Check for daily reminder on mount/login
-    const { getToken } = require("@/lib/utils"); // Lazy import to avoid cycle if utils uses auth
-    const { useEffect } = require("react");
-
     useEffect(() => {
         if (user) {
             const checkReminderAndSystemTasks = async () => {
-                const token = getToken();
+                const token = localStorage.getItem("token") || localStorage.getItem("auth_token");
                 if (!token) return;
                 try {
                     // 1. Check Daily Reminder
-                    await fetch("/api/conversation/check-reminder", {
+                    await fetch(`${API_BASE_URL}/conversation/check-reminder`, {
                         method: "POST",
                         headers: { Authorization: `Bearer ${token}` }
                     });
 
                     // 2. Check Weekly System Tasks (Global Trigger)
-                    await fetch("/api/system-tasks/weekly-check", {
+                    await fetch(`${API_BASE_URL}/system-tasks/weekly-check`, {
                         method: "POST",
                         headers: { Authorization: `Bearer ${token}` }
                     });

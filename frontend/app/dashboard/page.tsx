@@ -38,10 +38,10 @@ function DashboardContent() {
                     await apiPost("/api/system-tasks/weekly-check", {});
 
                     // 2. Fetch reminder data
-                    const reminderData = await fetcher("/api/dashboard/daily-reminder-data");
+                    const reminderData = await fetcher("/dashboard/daily-reminder-data");
 
                     // 3. Inject message
-                    await apiPost("/api/conversation/inject-reminder", { data: reminderData });
+                    await apiPost("/conversation/inject-reminder", { data: reminderData });
 
                     // 4. Update local storage
                     localStorage.setItem("lastReminderDate", today);

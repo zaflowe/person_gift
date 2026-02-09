@@ -12,6 +12,7 @@ from app.schemas.task import (
     TaskResponse,
     TaskEvidenceSubmit,
     TaskEvidenceResponse,
+    TaskUpdate,
     PlanTemplateCreate,
     PlanTemplateResponse,
 )
@@ -57,6 +58,18 @@ def get_task(
 ):
     """Get task details."""
     task = TaskService.get_task(db, task_id, current_user)
+    return task
+
+
+@router.patch("/{task_id}", response_model=TaskResponse)
+def update_task(
+    task_id: str,
+    updates: TaskUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Update a task (only allowed for PROPOSED project tasks)."""
+    task = TaskService.update_task(db, task_id, current_user, updates.dict(exclude_unset=True))
     return task
 
 

@@ -316,8 +316,13 @@ class ProjectService:
         milestones = db.query(Milestone).filter(
             Milestone.project_id == project.id
         ).all()
-        
+
+        if not milestones:
+            return
+
         critical_milestones = [m for m in milestones if m.is_critical]
+        if not critical_milestones:
+            critical_milestones = milestones
         
         # Check for failure
         if any(m.status == "FAILED" for m in critical_milestones):

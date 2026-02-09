@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { MessageCircle, X, Send, Loader2, RotateCcw } from "lucide-react";
 import { AppCard } from "@/components/ui/app-card";
-import { getToken, cn, fetcher, apiPost } from "@/lib/utils";
+import { getToken, cn, fetcher, apiPost, API_BASE_URL } from "@/lib/utils";
 import { sendChatMessage, requestLoginGreeting } from "@/lib/api/conversation";
 import { commitPlan } from "@/lib/api/planner";
 import { createQuickTask } from "@/lib/api/tasks";
@@ -19,12 +19,33 @@ interface ConversationState {
     messages: Message[];
     stage: string;
     intent: string | null;
+    planning_session_id?: string | null;
 }
 
 interface PlanTask {
     title: string;
     due_at: string;
     description?: string;
+    [key: string]: unknown;
+}
+
+interface PlanMilestone {
+    title: string;
+    due_at?: string;
+    description?: string;
+    [key: string]: unknown;
+}
+
+interface PlanLongTask {
+    title: string;
+    frequency_mode?: string;
+    interval_days?: number;
+    days_of_week?: number[];
+    total_cycle_days?: number;
+    default_start_time?: string;
+    default_end_time?: string;
+    evidence_type?: string;
+    evidence_criteria?: string;
     [key: string]: unknown;
 }
 
@@ -35,6 +56,8 @@ interface ProjectPlan {
         [key: string]: unknown;
     };
     tasks: PlanTask[];
+    milestones?: PlanMilestone[];
+    long_tasks?: PlanLongTask[];
 }
 
 interface PlanSession {
@@ -68,6 +91,47 @@ export default function ChatPlanner({ embedded = false, className }: { embedded?
     const [draftTask, setDraftTask] = useState<QuickTaskDraft | null>(null);
     const [projectBrief, setProjectBrief] = useState<ProjectBrief | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const messagesRef = useRef<HTMLDivElement | null>(null);
+
+    const safePlan = currentPlan?.plan ?? { project: { title: "", description: "" }, tasks: [] as PlanTask[] };
+    const safeProject = safePlan.project ?? { title: "", description: "" };
+    const safeTasks = Array.isArray(safePlan.tasks) ? safePlan.tasks : [];
+    const safeMilestones = Array.isArray(safePlan.milestones) ? safePlan.milestones : [];
+    const safeLongTasks = Array.isArray(safePlan.long_tasks) ? safePlan.long_tasks : [];
+
+    const normalizePlanSession = (session: PlanSession | null): PlanSession | null => {
+        if (!session || !session.plan) return null;
+        const rawPlan = session.plan as unknown as Record<string, unknown>;
+        const rawProject = (rawPlan as any).project || {};
+        const safeProject = {
+            ...rawProject,
+            title: rawProject.title || (rawPlan as any).project_title || (rawPlan as any).title || "",
+            description: rawProject.description || (rawPlan as any).description || "",
+        };
+        const safeTasks = Array.isArray((rawPlan as any).tasks)
+            ? (rawPlan as any).tasks.map((task: any) => ({
+                ...task,
+                due_at: task?.due_at || task?.deadline || "",
+            }))
+            : [];
+        const safeMilestones = Array.isArray((rawPlan as any).milestones)
+            ? (rawPlan as any).milestones.map((m: any) => ({
+                ...m,
+                due_at: m?.due_at || m?.deadline || "",
+            }))
+            : [];
+        const safeLongTasks = Array.isArray((rawPlan as any).long_tasks) ? (rawPlan as any).long_tasks : [];
+        return {
+            ...session,
+            plan: {
+                ...(rawPlan as any),
+                project: safeProject,
+                tasks: safeTasks,
+                milestones: safeMilestones,
+                long_tasks: safeLongTasks,
+            },
+        };
+    };
 
     // Initial Load - Persistence
     useEffect(() => {
@@ -85,8 +149,16 @@ export default function ChatPlanner({ embedded = false, className }: { embedded?
                 // Restore plan draft if we are in planning stage
                 if (data.stage === "planning") {
                     try {
-                        const planData = await fetcher<PlanSession>("/api/planner/latest");
-                        setCurrentPlan(planData);
+                        const planUrl = data.planning_session_id
+                            ? `${API_BASE_URL}/planner/${data.planning_session_id}`
+                            : `${API_BASE_URL}/planner/latest`;
+                        const res = await fetch(planUrl, {
+                            headers: { Authorization: `Bearer ${token}` }
+                        });
+                        if (res.ok) {
+                            const planData = await res.json();
+                            setCurrentPlan(normalizePlanSession(planData));
+                        }
                     } catch {
                         // Ignore if no plan found
                     }
@@ -108,6 +180,11 @@ export default function ChatPlanner({ embedded = false, className }: { embedded?
 
         loadConversation();
     }, [isOpen]);
+
+    useEffect(() => {
+        if (!messagesRef.current) return;
+        messagesRef.current.scrollTop = messagesRef.current.scrollHeight;
+    }, [messages.length, isOpen]);
 
 
     const handleSend = async () => {
@@ -154,22 +231,23 @@ export default function ChatPlanner({ embedded = false, className }: { embedded?
                 setProjectBrief(response.plan as unknown as ProjectBrief);
                 setCurrentPlan(null); setDraftTask(null);
             } else if (response.action_type === "create_project") {
-                setCurrentPlan({ session_id: response.conversation_id, plan: response.plan as unknown as ProjectPlan });
+                const planSessionId = response.planning_session_id || response.conversation_id;
+                setCurrentPlan(normalizePlanSession({ session_id: planSessionId, plan: response.plan as unknown as ProjectPlan }));
                 setDraftTask(null); setProjectBrief(null);
             } else if (response.action_type === "update_plan") {
                 // Update existing plan with refined version
                 setCurrentPlan((prev) => {
-                    if (!prev) {
-                        return {
-                            session_id: response.conversation_id,
-                            plan: response.plan as unknown as ProjectPlan
-                        };
-                    }
-                    return {
+                    const planSessionId = response.planning_session_id || response.conversation_id;
+                    const nextSession = {
+                        session_id: planSessionId,
+                        plan: response.plan as unknown as ProjectPlan,
+                    };
+                    if (!prev) return normalizePlanSession(nextSession);
+                    return normalizePlanSession({
                         ...prev,
                         plan: response.plan as unknown as ProjectPlan,
-                        session_id: response.conversation_id // Just in case it changed
-                    };
+                        session_id: planSessionId,
+                    });
                 });
                 setDraftTask(null); setProjectBrief(null);
             } else {
@@ -198,7 +276,8 @@ export default function ChatPlanner({ embedded = false, className }: { embedded?
             setMessages(prev => [...prev, { role: "assistant", content: response.message }]);
 
             if (response.action_type === "create_project") {
-                setCurrentPlan({ session_id: response.conversation_id, plan: response.plan as unknown as ProjectPlan });
+                const planSessionId = response.planning_session_id || response.conversation_id;
+                setCurrentPlan(normalizePlanSession({ session_id: planSessionId, plan: response.plan as unknown as ProjectPlan }));
                 setProjectBrief(null);
             }
         } catch (err: unknown) {
@@ -240,12 +319,14 @@ export default function ChatPlanner({ embedded = false, className }: { embedded?
 
     const handleUpdatePlan = (field: string, value: string) => {
         if (!currentPlan) return;
+        const existingPlan = currentPlan.plan || { project: { title: "", description: "" }, tasks: [] as PlanTask[] };
+        const existingProject = existingPlan.project || { title: "", description: "" };
         setCurrentPlan({
             ...currentPlan,
             plan: {
-                ...currentPlan.plan,
+                ...existingPlan,
                 project: {
-                    ...currentPlan.plan.project,
+                    ...existingProject,
                     [field]: value
                 }
             }
@@ -254,14 +335,48 @@ export default function ChatPlanner({ embedded = false, className }: { embedded?
 
     const handleUpdatePlanTask = (index: number, field: string, value: string) => {
         if (!currentPlan) return;
-        const newTasks = [...currentPlan.plan.tasks];
+        const existingPlan = currentPlan.plan || { project: { title: "", description: "" }, tasks: [] as PlanTask[] };
+        const existingTasks = Array.isArray(existingPlan.tasks) ? existingPlan.tasks : [];
+        const newTasks = [...existingTasks];
         newTasks[index] = { ...newTasks[index], [field]: value };
 
         setCurrentPlan({
             ...currentPlan,
             plan: {
-                ...currentPlan.plan,
+                ...existingPlan,
                 tasks: newTasks
+            }
+        });
+    };
+
+    const handleUpdateMilestone = (index: number, field: string, value: string) => {
+        if (!currentPlan) return;
+        const existingPlan = currentPlan.plan || { project: { title: "", description: "" }, tasks: [] as PlanTask[] };
+        const existingMilestones = Array.isArray(existingPlan.milestones) ? existingPlan.milestones : [];
+        const newMilestones = [...existingMilestones];
+        newMilestones[index] = { ...newMilestones[index], [field]: value };
+
+        setCurrentPlan({
+            ...currentPlan,
+            plan: {
+                ...existingPlan,
+                milestones: newMilestones
+            }
+        });
+    };
+
+    const handleUpdateLongTask = (index: number, field: string, value: string) => {
+        if (!currentPlan) return;
+        const existingPlan = currentPlan.plan || { project: { title: "", description: "" }, tasks: [] as PlanTask[] };
+        const existingLongTasks = Array.isArray(existingPlan.long_tasks) ? existingPlan.long_tasks : [];
+        const newLongTasks = [...existingLongTasks];
+        newLongTasks[index] = { ...newLongTasks[index], [field]: value };
+
+        setCurrentPlan({
+            ...currentPlan,
+            plan: {
+                ...existingPlan,
+                long_tasks: newLongTasks
             }
         });
     };
@@ -290,6 +405,15 @@ export default function ChatPlanner({ embedded = false, className }: { embedded?
         setDraftTask(null);
         setProjectBrief(null);
         setMessages(prev => [...prev, { role: "assistant", content: "已取消规划。还有什么我能帮到你的吗？" }]);
+        // End planning session on backend to avoid stale drafts
+        apiPost<ConversationState>("/api/conversation/reset", {})
+            .then((data) => {
+                setConversationId(data.conversation_id);
+                setMessages([]);
+            })
+            .catch(() => {
+                // Non-blocking
+            });
     };
 
     const handleReset = async () => {
@@ -365,7 +489,7 @@ export default function ChatPlanner({ embedded = false, className }: { embedded?
                     </div>
 
                     {/* Messages */}
-                    <div className="flex-1 overflow-y-auto p-5 space-y-5 bg-[var(--surface)] custom-scrollbar">
+                    <div ref={messagesRef} className="flex-1 overflow-y-auto p-5 space-y-5 bg-[var(--surface)] custom-scrollbar">
                         {messages.length === 0 && (
                             <div className="flex flex-col h-full justify-center max-w-sm mx-auto animate-fade-in">
                                 <div className="mb-6 text-center md:text-left">
@@ -513,13 +637,13 @@ export default function ChatPlanner({ embedded = false, className }: { embedded?
                                         </span>
                                     </div>
                                     <input
-                                        value={currentPlan.plan.project.title || ""}
+                                        value={safeProject.title || ""}
                                         onChange={(e) => handleUpdatePlan("title", e.target.value)}
                                         className="w-full bg-[var(--surface-hover)] border border-[var(--border)] rounded-md px-2 py-1.5 text-[13px] font-medium text-[var(--text)] focus:ring-2 focus:ring-[var(--primary)] outline-none"
                                         placeholder="项目标题"
                                     />
                                     <textarea
-                                        value={currentPlan.plan.project.description || ""}
+                                        value={safeProject.description || ""}
                                         onChange={(e) => handleUpdatePlan("description", e.target.value)}
                                         className="w-full mt-2 bg-[var(--surface-hover)] border border-[var(--border)] rounded-md px-2 py-1.5 text-[12px] text-[var(--muted-foreground)] focus:ring-2 focus:ring-[var(--primary)] outline-none resize-none"
                                         placeholder="描述..."
@@ -528,10 +652,43 @@ export default function ChatPlanner({ embedded = false, className }: { embedded?
 
                                 <div className="space-y-2">
                                     <div className="flex items-center justify-between text-[11px] text-[var(--muted)] mb-1">
-                                        <span>包含 {currentPlan.plan.tasks.length} 个任务 (点击修改)</span>
+                                        <span>里程碑 {safeMilestones.length} 个 (点击修改)</span>
+                                    </div>
+                                    <div className="space-y-2 max-h-44 overflow-y-auto pr-1 custom-scrollbar">
+                                        {safeMilestones.map((milestone: PlanMilestone, idx: number) => (
+                                            <div
+                                                key={idx}
+                                                className="bg-[var(--surface-hover)] rounded-md p-2 text-xs border border-[var(--border)]/50 group hover:border-[var(--primary)]/30 transition-colors"
+                                            >
+                                                <div className="flex flex-col gap-1.5">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-[var(--muted)] font-mono w-4">{idx + 1}.</span>
+                                                        <input
+                                                            value={milestone.title || ""}
+                                                            onChange={(e) => handleUpdateMilestone(idx, "title", e.target.value)}
+                                                            className="flex-1 bg-transparent border-b border-transparent focus:border-[var(--primary)] outline-none font-medium text-[var(--text)]"
+                                                        />
+                                                    </div>
+                                                    <div className="flex items-center gap-2 pl-6">
+                                                        <input
+                                                            type="datetime-local"
+                                                            value={milestone.due_at ? new Date(milestone.due_at).toISOString().slice(0, 16) : ""}
+                                                            onChange={(e) => handleUpdateMilestone(idx, "due_at", new Date(e.target.value).toISOString())}
+                                                            className="text-[10px] bg-[var(--surface)] border border-[var(--border)] rounded px-1.5 py-0.5 text-[var(--muted)] focus:text-[var(--text)] outline-none"
+                                                        />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <div className="space-y-2">
+                                    <div className="flex items-center justify-between text-[11px] text-[var(--muted)] mb-1">
+                                        <span>包含 {safeTasks.length} 个任务 (点击修改)</span>
                                     </div>
                                     <div className="space-y-2 max-h-60 overflow-y-auto pr-1 custom-scrollbar">
-                                        {currentPlan.plan.tasks.map((task: PlanTask, idx: number) => (
+                                        {safeTasks.map((task: PlanTask, idx: number) => (
                                             <div
                                                 key={idx}
                                                 className="bg-[var(--surface-hover)] rounded-md p-2 text-xs border border-[var(--border)]/50 group hover:border-[var(--primary)]/30 transition-colors"
@@ -550,6 +707,67 @@ export default function ChatPlanner({ embedded = false, className }: { embedded?
                                                             type="datetime-local"
                                                             value={task.due_at ? new Date(task.due_at).toISOString().slice(0, 16) : ""}
                                                             onChange={(e) => handleUpdatePlanTask(idx, "due_at", new Date(e.target.value).toISOString())}
+                                                            className="text-[10px] bg-[var(--surface)] border border-[var(--border)] rounded px-1.5 py-0.5 text-[var(--muted)] focus:text-[var(--text)] outline-none"
+                                                        />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <div className="space-y-2">
+                                    <div className="flex items-center justify-between text-[11px] text-[var(--muted)] mb-1">
+                                        <span>长期任务 {safeLongTasks.length} 个 (可调整)</span>
+                                    </div>
+                                    <div className="space-y-2 max-h-60 overflow-y-auto pr-1 custom-scrollbar">
+                                        {safeLongTasks.map((lt: PlanLongTask, idx: number) => (
+                                            <div
+                                                key={idx}
+                                                className="bg-[var(--surface-hover)] rounded-md p-2 text-xs border border-[var(--border)]/50 group hover:border-[var(--primary)]/30 transition-colors"
+                                            >
+                                                <div className="flex flex-col gap-2">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-[var(--muted)] font-mono w-4">{idx + 1}.</span>
+                                                        <input
+                                                            value={lt.title || ""}
+                                                            onChange={(e) => handleUpdateLongTask(idx, "title", e.target.value)}
+                                                            className="flex-1 bg-transparent border-b border-transparent focus:border-[var(--primary)] outline-none font-medium text-[var(--text)]"
+                                                        />
+                                                    </div>
+                                                    <div className="flex flex-wrap items-center gap-2 pl-6">
+                                                        <select
+                                                            value={lt.frequency_mode || "interval"}
+                                                            onChange={(e) => handleUpdateLongTask(idx, "frequency_mode", e.target.value)}
+                                                            className="text-[10px] bg-[var(--surface)] border border-[var(--border)] rounded px-1.5 py-0.5 text-[var(--muted)] focus:text-[var(--text)] outline-none"
+                                                        >
+                                                            <option value="interval">间隔</option>
+                                                            <option value="specific_days">指定星期</option>
+                                                        </select>
+                                                        <input
+                                                            type="number"
+                                                            min={1}
+                                                            value={lt.interval_days ?? 1}
+                                                            onChange={(e) => handleUpdateLongTask(idx, "interval_days", e.target.value)}
+                                                            className="w-20 text-[10px] bg-[var(--surface)] border border-[var(--border)] rounded px-1.5 py-0.5 text-[var(--muted)] focus:text-[var(--text)] outline-none"
+                                                        />
+                                                        <input
+                                                            type="number"
+                                                            min={1}
+                                                            value={lt.total_cycle_days ?? 28}
+                                                            onChange={(e) => handleUpdateLongTask(idx, "total_cycle_days", e.target.value)}
+                                                            className="w-24 text-[10px] bg-[var(--surface)] border border-[var(--border)] rounded px-1.5 py-0.5 text-[var(--muted)] focus:text-[var(--text)] outline-none"
+                                                        />
+                                                        <input
+                                                            type="time"
+                                                            value={lt.default_start_time || ""}
+                                                            onChange={(e) => handleUpdateLongTask(idx, "default_start_time", e.target.value)}
+                                                            className="text-[10px] bg-[var(--surface)] border border-[var(--border)] rounded px-1.5 py-0.5 text-[var(--muted)] focus:text-[var(--text)] outline-none"
+                                                        />
+                                                        <input
+                                                            type="time"
+                                                            value={lt.default_end_time || ""}
+                                                            onChange={(e) => handleUpdateLongTask(idx, "default_end_time", e.target.value)}
                                                             className="text-[10px] bg-[var(--surface)] border border-[var(--border)] rounded px-1.5 py-0.5 text-[var(--muted)] focus:text-[var(--text)] outline-none"
                                                         />
                                                     </div>

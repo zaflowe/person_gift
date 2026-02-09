@@ -121,14 +121,36 @@ PLAN_REFINEMENT_PROMPT = f"""{YAN_YAN_CORE_IDENTITY}
 
 请返回 JSON 格式：
 {{{{
-  "project_title": "...",
-  "description": "...",
+  "project": {{
+     "title": "...",
+     "description": "..."
+  }},
+  "milestones": [
+     {{{{
+        "title": "...",
+        "description": "...",
+        "due_at": "YYYY-MM-DDTHH:MM:SS+08:00"
+     }}}}
+  ],
   "tasks": [
      {{{{
         "title": "...",
         "description": "...",
-        "deadline": "YYYY-MM-DDTHH:MM:SS",
+        "due_at": "YYYY-MM-DDTHH:MM:SS+08:00",
         "evidence_type": "text/image/number/none"
+     }}}}
+  ],
+  "long_tasks": [
+     {{{{
+        "title": "...",
+        "frequency_mode": "interval/specific_days",
+        "interval_days": 1,
+        "days_of_week": [0,2,4],
+        "total_cycle_days": 28,
+        "default_start_time": "19:00",
+        "default_end_time": "20:00",
+        "evidence_type": "text/image/number/none",
+        "evidence_criteria": "..."
      }}}}
   ],
   "extra_message": "（可选）对修改的解释，或者对无效指令的回复"
@@ -279,9 +301,10 @@ class ConversationService:
             # In a real mock, we might parse "add task" etc.
             # For now, just return valid structure with message
             return {
-                "project_title": new_plan.get("project_title", "Project"),
-                "description": new_plan.get("description", ""),
+                "project": new_plan.get("project", {"title": "Project", "description": ""}),
+                "milestones": new_plan.get("milestones", []),
                 "tasks": new_plan.get("tasks", []),
+                "long_tasks": new_plan.get("long_tasks", []),
                 "extra_message": f"Mock: 已收到修改意见 '{message}'，但 Mock 模式不支持复杂逻辑修改。"
             }
             

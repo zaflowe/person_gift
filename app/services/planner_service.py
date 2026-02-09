@@ -14,7 +14,8 @@ logger = logging.getLogger(__name__)
 PLAN_SYSTEM_PROMPT = """你是一个任务规划助手。用户会告诉你一个目标或想法，你需要：
 1. 生成一个 Project（项目）
 2. 将项目拆分为多个 Task（任务），每个任务都要有明确的截止时间
-3. 输出必须是**有效的 JSON 格式**，不要有任何额外文字
+3. 可选生成里程碑（milestones）与长期任务（long_tasks）
+4. 输出必须是**有效的 JSON 格式**，不要有任何额外文字
 
 输出格式示例：
 {
@@ -22,6 +23,13 @@ PLAN_SYSTEM_PROMPT = """你是一个任务规划助手。用户会告诉你一�
     "title": "项目名称（简短）",
     "description": "项目描述（1-2句话）"
   },
+  "milestones": [
+    {
+      "title": "阶段里程碑标题",
+      "description": "阶段目标或验收说明",
+      "due_at": "2026-02-15T23:59:59+08:00"
+    }
+  ],
   "tasks": [
     {
       "title": "任务名称",
@@ -30,13 +38,27 @@ PLAN_SYSTEM_PROMPT = """你是一个任务规划助手。用户会告诉你一�
       "evidence_type": "none"
     }
   ],
+  "long_tasks": [
+    {
+      "title": "长期任务标题",
+      "frequency_mode": "interval/specific_days",
+      "interval_days": 1,
+      "days_of_week": [1,3,5],
+      "total_cycle_days": 28,
+      "default_start_time": "19:00",
+      "default_end_time": "20:00",
+      "evidence_type": "text",
+      "evidence_criteria": "..."
+    }
+  ],
   "rationale": "为什么这样规划（1句话）"
 }
 
 规则：
 - 所有文本用中文
 - Task 截止时间必须合理分布（不要都在同一天）
-- 默认生成 3-7 个任务（最小闭环）
+- 默认生成 3-7 个任务（最小闭环），并给出 1-3 个里程碑
+- 若目标持续期 >= 4 周，请给出 1-3 个长期任务
 - due_at 格式：ISO 8601 with timezone (例如: 2026-02-15T23:59:59+08:00)
 - evidence_type 可选值：none, text, number, image
 - 任务要具体可执行，避免空话
@@ -180,8 +202,8 @@ class PlannerService:
         tasks = plan["tasks"]
         if not isinstance(tasks, list):
             raise ValueError("'tasks' must be an array")
-        if len(tasks) == 0:
-            raise ValueError("At least one task is required")
+        if len(tasks) == 0 and not plan.get("milestones") and not plan.get("long_tasks"):
+            raise ValueError("At least one task or milestone is required")
         
         # Validate each task
         for i, task in enumerate(tasks):
@@ -218,6 +240,13 @@ class PlannerService:
                 "title": f"完成「{message[:20]}」",
                 "description": "AI 生成的示例计划（Mock Mode）"
             },
+            "milestones": [
+                {
+                    "title": "阶段检查点",
+                    "description": "完成关键概念与工具验证",
+                    "due_at": (today_dt + timedelta(days=10)).isoformat() + "+08:00",
+                }
+            ],
             "tasks": [
                 {
                     "title": "第一步：准备阶段",
@@ -236,6 +265,19 @@ class PlannerService:
                     "description": "整理成果，进行总结",
                     "due_at": (today_dt + timedelta(days=21)).isoformat() + "+08:00",
                     "evidence_type": "text"
+                }
+            ],
+            "long_tasks": [
+                {
+                    "title": "每日学习与复盘",
+                    "frequency_mode": "interval",
+                    "interval_days": 1,
+                    "days_of_week": [],
+                    "total_cycle_days": 21,
+                    "default_start_time": "19:00",
+                    "default_end_time": "20:00",
+                    "evidence_type": "text",
+                    "evidence_criteria": "写一句复盘或拍一张笔记照片"
                 }
             ],
             "rationale": "这是一个 3 周的示例计划，包含准备、执行、总结三个阶段。"

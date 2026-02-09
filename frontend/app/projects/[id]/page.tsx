@@ -14,6 +14,8 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useToast } from "@/components/ui/toast";
 import { CreateTaskModal } from "@/components/modals/create-task-modal";
 import { CreateLongTaskModal } from "@/components/modals/create-long-task-modal";
+import { EditTaskModal } from "@/components/modals/edit-task-modal";
+import { EditLongTaskModal } from "@/components/modals/edit-long-task-modal";
 import { ProjectLongTaskTemplate, hideProjectLongTaskTemplate } from "@/lib/api/project-long-tasks";
 
 import { EditProjectModal } from "@/components/modals/edit-project-modal";
@@ -52,7 +54,7 @@ function ProjectDetailContent() {
     const { data: project, error, mutate: reloadProject } = useSWR<Project>(id ? `/api/projects/${id}` : null, fetcher);
     const { data: milestones, mutate: reloadMilestones } = useSWR<Milestone[]>(id ? `/api/projects/${id}/milestones` : null, fetcher);
     // FIX: Filter tasks by project_id
-    const { data: tasks } = useSWR<Task[]>(id ? `/api/tasks?project_id=${id}` : null, fetcher);
+    const { data: tasks, mutate: reloadTasks } = useSWR<Task[]>(id ? `/api/tasks?project_id=${id}` : null, fetcher);
     const { data: longTaskTemplates, mutate: reloadLongTaskTemplates } = useSWR<ProjectLongTaskTemplate[]>(
         id ? `/api/projects/${id}/long-task-templates` : null,
         fetcher
@@ -64,6 +66,8 @@ function ProjectDetailContent() {
     const [isAddingTask, setIsAddingTask] = useState(false);
     const [isAddingLongTask, setIsAddingLongTask] = useState(false);
     const [editingMilestoneId, setEditingMilestoneId] = useState<string | null>(null);
+    const [editingTask, setEditingTask] = useState<Task | null>(null);
+    const [editingLongTask, setEditingLongTask] = useState<ProjectLongTaskTemplate | null>(null);
     const [milestoneSort, setMilestoneSort] = useState<'asc' | 'desc'>('asc'); // Not used yet but requested
     const [showColorPicker, setShowColorPicker] = useState(false);
     const [editForm, setEditForm] = useState({
@@ -180,6 +184,47 @@ function ProjectDetailContent() {
         }
     };
 
+    const handleUpdateTask = async (taskId: string, payload: any) => {
+        setProcessing(true);
+        try {
+            await apiPatch(`/api/tasks/${taskId}`, payload);
+            reloadTasks();
+            setEditingTask(null);
+        } catch (e: any) {
+            alert(e.message || "更新任务失败");
+        } finally {
+            setProcessing(false);
+        }
+    };
+
+    const handleUpdateLongTaskTemplate = async (templateId: string, payload: any) => {
+        setProcessing(true);
+        try {
+            await apiPatch(`/api/projects/${id}/long-task-templates/${templateId}`, payload);
+            reloadLongTaskTemplates();
+            setEditingLongTask(null);
+        } catch (e: any) {
+            alert(e.message || "更新长期任务失败");
+        } finally {
+            setProcessing(false);
+        }
+    };
+
+    const handleCompleteProject = async () => {
+        if (!confirm("确认完成项目？此操作会将项目标记为已完成。")) return;
+        setProcessing(true);
+        try {
+            await apiPost(`/api/projects/${id}/complete`, {});
+            reloadProject();
+        } catch (e: any) {
+            alert(e.message || "完成项目失败");
+        } finally {
+            setProcessing(false);
+        }
+    };
+
+    const allMilestonesAchieved = milestones && milestones.length > 0 && milestones.every(m => m.status === "ACHIEVED");
+
     return (
         <div className="max-w-4xl mx-auto p-6 space-y-6">
             {/* Header */}
@@ -290,6 +335,23 @@ function ProjectDetailContent() {
                     </Alert>
                 )
             }
+
+            {project.status === "ACTIVE" && (
+                <Alert className="bg-success/5 border-success/20">
+                    <CheckCircle className="h-4 w-4 text-success" />
+                    <AlertTitle>项目进行中</AlertTitle>
+                    <AlertDescription className="mt-2">
+                        <p className="mb-4">当全部里程碑完成后，可手动点击完成项目。</p>
+                        <button
+                            onClick={handleCompleteProject}
+                            disabled={!allMilestonesAchieved || processing}
+                            className={`px-4 py-2 rounded-md font-medium ${allMilestonesAchieved ? "bg-success text-success-foreground" : "bg-muted text-muted-foreground cursor-not-allowed"}`}
+                        >
+                            完成项目
+                        </button>
+                    </AlertDescription>
+                </Alert>
+            )}
 
             {/* AI Analysis (If available) */}
             {
@@ -492,6 +554,14 @@ function ProjectDetailContent() {
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-2">
+                                    {project.status === "PROPOSED" && (
+                                        <button
+                                            onClick={() => setEditingLongTask(t)}
+                                            className="text-xs px-2 py-1 border border-border rounded hover:bg-muted"
+                                        >
+                                            编辑
+                                        </button>
+                                    )}
                                     <button
                                         onClick={() => handleHideLongTask(t.id)}
                                         className="text-xs px-2 py-1 border border-border rounded hover:bg-muted"
@@ -537,9 +607,8 @@ function ProjectDetailContent() {
                 {tasks && tasks.length > 0 ? (
                     <div className="grid gap-3">
                         {tasks.map((task) => (
-                            <Link
+                            <div
                                 key={task.id}
-                                href={`/tasks/${task.id}`}
                                 className="p-4 rounded-lg border bg-card hover:bg-muted/50 transition-colors"
                             >
                                 <div className="flex items-start justify-between">
@@ -556,9 +625,27 @@ function ProjectDetailContent() {
                                             </p>
                                         )}
                                     </div>
-                                    <StatusBadge status={task.status} type="task" />
+                                    <div className="flex items-center gap-2">
+                                        <StatusBadge status={task.status} type="task" />
+                                        {project.status === "PROPOSED" && (
+                                            <button
+                                                onClick={() => setEditingTask(task)}
+                                                className="p-1 text-muted-foreground hover:text-foreground"
+                                                title="编辑"
+                                            >
+                                                <Edit2 className="w-4 h-4" />
+                                            </button>
+                                        )}
+                                        <Link
+                                            href={`/tasks/${task.id}`}
+                                            className="p-1 text-muted-foreground hover:text-foreground"
+                                            title="查看"
+                                        >
+                                            <ArrowLeft className="w-4 h-4 rotate-180" />
+                                        </Link>
+                                    </div>
                                 </div>
-                            </Link>
+                            </div>
                         ))}
                     </div>
                 ) : (
@@ -580,6 +667,22 @@ function ProjectDetailContent() {
                 projectId={id}
                 onSuccess={() => reloadLongTaskTemplates()}
             />
+
+            {editingTask && (
+                <EditTaskModal
+                    task={editingTask}
+                    onClose={() => setEditingTask(null)}
+                    onSave={handleUpdateTask}
+                />
+            )}
+
+            {editingLongTask && (
+                <EditLongTaskModal
+                    template={editingLongTask}
+                    onClose={() => setEditingLongTask(null)}
+                    onSave={handleUpdateLongTaskTemplate}
+                />
+            )}
         </div >
     );
 }

@@ -67,7 +67,9 @@ def update_long_task_template(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    _ensure_project(db, project_id, current_user.id)
+    project = _ensure_project(db, project_id, current_user.id)
+    if project.status != "PROPOSED":
+        raise HTTPException(status_code=400, detail="仅提案中的项目可修改长期任务")
     updated = project_long_task_service.update_template(
         db, current_user.id, project_id, template_id, updates.dict(exclude_unset=True)
     )
@@ -83,7 +85,9 @@ def hide_long_task_template(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    _ensure_project(db, project_id, current_user.id)
+    project = _ensure_project(db, project_id, current_user.id)
+    if project.status != "PROPOSED":
+        raise HTTPException(status_code=400, detail="仅提案中的项目可修改长期任务")
     updated = project_long_task_service.hide_template(
         db, current_user.id, project_id, template_id
     )

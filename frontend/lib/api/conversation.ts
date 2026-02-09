@@ -1,6 +1,9 @@
 // Conversation API client functions
 
-const API_BASE = "";
+const API_BASE =
+    process.env.NEXT_PUBLIC_API_BASE ||
+    process.env.NEXT_PUBLIC_API_URL ||
+    "";
 
 export interface ChatMessage {
     role: "user" | "assistant";
@@ -18,6 +21,7 @@ export interface ChatResponse {
     message: string;
     plan?: Record<string, unknown>;
     task?: Record<string, unknown>;  // task data (draft or created)
+    planning_session_id?: string;
     stage: string;
     intent?: string;
 }
@@ -36,7 +40,7 @@ export async function sendChatMessage(
     token: string,
     conversationId?: string
 ): Promise<ChatResponse> {
-    const response = await fetch(`${API_BASE}/api/conversation/chat`, {
+    const response = await fetch(`${API_BASE}/conversation/chat`, {
         method: "POST",
         headers: {
             "Content-Type": "application/json",
@@ -57,7 +61,7 @@ export async function sendChatMessage(
 }
 
 export async function requestLoginGreeting(token: string): Promise<LoginGreetingResponse> {
-    const response = await fetch("/api/conversation/login-greeting", {
+    const response = await fetch(`${API_BASE}/conversation/login-greeting`, {
         method: "POST",
         headers: {
             "Content-Type": "application/json",

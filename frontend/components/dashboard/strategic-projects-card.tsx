@@ -23,7 +23,7 @@ interface ExemptionQuota {
 }
 
 export function StrategicProjectsCard() {
-    const { data: projects } = useSWR<StrategicProject[]>("/api/dashboard/projects/strategic", fetcher);
+    const { data: projects } = useSWR<StrategicProject[]>("/dashboard/projects/strategic", fetcher);
     const { data: quota } = useSWR<ExemptionQuota>("/api/exemptions/quota", fetcher);
 
     return (

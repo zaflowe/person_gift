@@ -72,7 +72,10 @@ export function isOverdue(deadline: string | undefined): boolean {
 
 // API 基础 URL
 // Use relative path to leverage Next.js Rewrites (Proxy)
-export const API_BASE_URL = "";
+export const API_BASE_URL =
+    process.env.NEXT_PUBLIC_API_BASE ||
+    process.env.NEXT_PUBLIC_API_URL ||
+    "";
 
 // Token 管理
 export function getToken(): string | null {

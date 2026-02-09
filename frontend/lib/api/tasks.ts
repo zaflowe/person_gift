@@ -1,6 +1,6 @@
 // Tasks API client functions
 
-const API_BASE = "";
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "";
 
 export interface QuickTaskRequest {
     title: string;
@@ -19,7 +19,7 @@ export async function createQuickTask(
     data: QuickTaskRequest,
     token: string
 ): Promise<QuickTaskResponse> {
-    const response = await fetch(`${API_BASE}/api/conversation/tasks/quick-create`, {
+    const response = await fetch(`${API_BASE}/conversation/tasks/quick-create`, {
         method: "POST",
         headers: {
             "Content-Type": "application/json",

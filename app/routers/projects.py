@@ -1,7 +1,8 @@
 """Projects router."""
 from typing import List
+from datetime import datetime
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -103,6 +104,30 @@ def user_confirm(
     return project
 
 
+@router.post("/{project_id}/complete", response_model=ProjectResponse)
+def complete_project(
+    project_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Complete a project when all milestones are achieved.
+    """
+    project = ProjectService.get_project(db, project_id, current_user)
+
+    milestones = ProjectService.get_milestones(db, project_id, current_user)
+    if not milestones:
+        raise HTTPException(status_code=400, detail="没有里程碑，无法完成项目")
+    if not all(m.status == "ACHIEVED" for m in milestones):
+        raise HTTPException(status_code=400, detail="仍有未完成的里程碑")
+
+    project.status = "SUCCESS"
+    project.resolved_at = datetime.utcnow()
+    db.commit()
+    db.refresh(project)
+    return project
+
+
 # Milestones
 
 @router.get("/{project_id}/milestones", response_model=List[MilestoneResponse])
@@ -139,6 +164,9 @@ def update_milestone(
     db: Session = Depends(get_db)
 ):
     """Update a milestone."""
+    project = ProjectService.get_project(db, project_id, current_user)
+    if project.status != "PROPOSED":
+        raise HTTPException(status_code=400, detail="仅提案中的项目可修改里程碑")
     milestone = ProjectService.update_milestone(
         db, project_id, milestone_id, current_user, milestone_update
     )
@@ -153,6 +181,9 @@ def delete_milestone(
     db: Session = Depends(get_db)
 ):
     """Delete a milestone."""
+    project = ProjectService.get_project(db, project_id, current_user)
+    if project.status != "PROPOSED":
+        raise HTTPException(status_code=400, detail="仅提案中的项目可修改里程碑")
     ProjectService.delete_milestone(
         db, project_id, milestone_id, current_user
     )

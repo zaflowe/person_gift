@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from fastapi import HTTPException, UploadFile
 
 from app.models.task import Task, TaskEvidence, PlanTemplate
+from app.models.project import Project
 from app.models.user import User
 from app.schemas.task import TaskCreate, TaskEvidenceSubmit
 from app.services.ai_service import ai_service
@@ -106,6 +107,46 @@ class TaskService:
         db.refresh(task)
         
         logger.info(f"Task {task_id} completed")
+        return task
+
+    @staticmethod
+    def update_task(db: Session, task_id: str, user: User, updates: dict) -> Task:
+        """Update task details (for PROPOSED project tasks)."""
+        task = TaskService.get_task(db, task_id, user)
+
+        if task.project_id:
+            project = db.query(Project).filter(
+                Project.id == task.project_id,
+                Project.user_id == user.id
+            ).first()
+            if project and project.status != "PROPOSED":
+                raise HTTPException(
+                    status_code=400,
+                    detail="仅提案中的项目任务可修改"
+                )
+
+        if "title" in updates and updates["title"] is not None:
+            task.title = updates["title"]
+        if "description" in updates and updates["description"] is not None:
+            task.description = updates["description"]
+        if "evidence_type" in updates and updates["evidence_type"] is not None:
+            task.evidence_type = updates["evidence_type"]
+        if "evidence_criteria" in updates:
+            task.evidence_criteria = updates["evidence_criteria"]
+        if "deadline" in updates and updates["deadline"] is not None:
+            task.deadline = updates["deadline"]
+        if "tags" in updates and updates["tags"] is not None:
+            task.tags = json.dumps(updates["tags"], ensure_ascii=False)
+        if "scheduled_time" in updates:
+            task.scheduled_time = updates["scheduled_time"]
+            task.scheduled_date = updates["scheduled_time"]
+            task.is_time_blocked = bool(updates["scheduled_time"])
+        if "duration" in updates and updates["duration"] is not None:
+            task.duration = updates["duration"]
+
+        db.commit()
+        db.refresh(task)
+        logger.info(f"Updated task {task_id}")
         return task
     
     @staticmethod

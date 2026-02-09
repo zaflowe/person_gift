@@ -53,14 +53,24 @@ services:
       REDIS_URL: redis://redis:6379/0
       # CORS origins (Caddy handles domain, but API needs to know)
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-https://yourdomain.com}
-      SECRET_KEY: ${SECRET_KEY:-default_secret_please_change}
+      JWT_SECRET: ${JWT_SECRET:-default_secret_please_change}
+      TIMEZONE: ${TIMEZONE:-Asia/Shanghai}
       GEMINI_API_KEY: ${GEMINI_API_KEY}
       # AI Configuration
       AI_PROVIDER: ${AI_PROVIDER:-qwen}
       QWEN_API_KEY: ${QWEN_API_KEY}
       QWEN_BASE_URL: ${QWEN_BASE_URL}
+      QWEN_MODEL: ${QWEN_MODEL:-qwen-plus}
     networks:
       - app_network
+    volumes:
+      - ./uploads:/app/uploads
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
 
   # ----------------------------------------------------
   # FRONTEND (Next.js Standalone)
@@ -69,10 +79,14 @@ services:
     build:
       context: ./frontend
       dockerfile: ../docker/frontend/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api}
+        NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-/api}
     restart: always
     environment:
-      # Next.js build args if needed
-      NEXT_PUBLIC_API_URL: /api
+      # Runtime fallback (build args are primary)
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api}
+      NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-/api}
       # Hostname for standalone server
       HOSTNAME: "0.0.0.0"
     networks:

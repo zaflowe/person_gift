@@ -20,6 +20,17 @@ class TaskCreate(BaseModel):
     duration: Optional[int] = 60  # Default 60 mins if scheduled
 
 
+class TaskUpdate(BaseModel):
+    """Schema for updating a task."""
+    title: Optional[str] = Field(None, min_length=1, max_length=200)
+    description: Optional[str] = None
+    evidence_type: Optional[Literal["image", "text", "number", "none"]] = None
+    evidence_criteria: Optional[str] = None
+    deadline: Optional[datetime] = None
+    tags: Optional[list[str]] = None
+    scheduled_time: Optional[datetime] = None
+    duration: Optional[int] = None
+
 
 class TaskResponse(BaseModel):
     """Schema for task response."""

@@ -40,6 +40,7 @@ def init_db():
     try:
         _ensure_tasks_long_template_column()
         _ensure_habit_evidence_criteria_column()
+        _ensure_conversation_planning_session_id()
     except Exception as e:
         print(f"⚠️ Migration warning: {e}")
 
@@ -74,3 +75,19 @@ def _ensure_habit_evidence_criteria_column():
             conn.execute(text("ALTER TABLE habit_templates ADD COLUMN evidence_criteria TEXT"))
         else:
             conn.execute(text("ALTER TABLE habit_templates ADD COLUMN IF NOT EXISTS evidence_criteria TEXT"))
+
+
+def _ensure_conversation_planning_session_id():
+    inspector = inspect(engine)
+    if "conversation_sessions" not in inspector.get_table_names():
+        return
+
+    columns = [col["name"] for col in inspector.get_columns("conversation_sessions")]
+    if "planning_session_id" in columns:
+        return
+
+    with engine.begin() as conn:
+        if settings.database_url.startswith("sqlite"):
+            conn.execute(text("ALTER TABLE conversation_sessions ADD COLUMN planning_session_id VARCHAR"))
+        else:
+            conn.execute(text("ALTER TABLE conversation_sessions ADD COLUMN IF NOT EXISTS planning_session_id VARCHAR"))
