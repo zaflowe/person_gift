@@ -23,7 +23,7 @@ export function EditLongTaskModal({ template, onClose, onSave }: EditLongTaskMod
         days_of_week: Array.isArray(template.days_of_week) ? template.days_of_week : [],
         default_start_time: template.default_start_time || "",
         default_end_time: template.default_end_time || "",
-        evidence_type: template.evidence_type || "none",
+        evidence_type: (template.evidence_type || "none") as "none" | "image" | "text" | "number",
         evidence_criteria: template.evidence_criteria || "",
         total_cycle_days: template.total_cycle_days || 28,
     });
@@ -204,7 +204,7 @@ export function EditLongTaskModal({ template, onClose, onSave }: EditLongTaskMod
                         <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">验收方式</label>
                         <select
                             value={form.evidence_type}
-                            onChange={e => setForm({ ...form, evidence_type: e.target.value })}
+                            onChange={e => setForm({ ...form, evidence_type: e.target.value as "none" | "image" | "text" | "number" })}
                             className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none transition-colors appearance-none"
                         >
                             <option value="none">自觉完成 (无强制)</option>
