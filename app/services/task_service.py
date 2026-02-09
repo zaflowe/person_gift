@@ -1,10 +1,11 @@
 """Task service for task business logic."""
 import json
-from datetime import datetime
+from datetime import datetime, date, time, timedelta
 from typing import List, Optional
 import logging
 
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 from fastapi import HTTPException, UploadFile
 
 from app.models.task import Task, TaskEvidence, PlanTemplate
@@ -18,10 +19,28 @@ logger = logging.getLogger(__name__)
 
 class TaskService:
     """Task business logic service."""
+
+    @staticmethod
+    def _apply_proposed_deadline(task: Task, base_date: date | None = None) -> None:
+        if task.proposal_offset_days is None:
+            return
+        base = base_date or date.today()
+        target_date = base + timedelta(days=task.proposal_offset_days)
+        deadline_time = task.deadline.time() if task.deadline else time(23, 59, 59)
+        task.deadline = datetime.combine(target_date, deadline_time)
     
     @staticmethod
     def create_task(db: Session, user: User, task_data: TaskCreate) -> Task:
         """Create a new task."""
+        proposal_offset_days = None
+        if task_data.project_id and task_data.deadline:
+            project = db.query(Project).filter(
+                Project.id == task_data.project_id,
+                Project.user_id == user.id
+            ).first()
+            if project and project.status == "PROPOSED":
+                proposal_offset_days = (task_data.deadline.date() - date.today()).days
+
         task = Task(
             user_id=user.id,
             title=task_data.title,
@@ -29,6 +48,7 @@ class TaskService:
             evidence_type=task_data.evidence_type,
             evidence_criteria=task_data.evidence_criteria,
             deadline=task_data.deadline,
+            proposal_offset_days=proposal_offset_days,
             project_id=task_data.project_id,
             # Schedule fields
             scheduled_time=task_data.scheduled_time,
@@ -56,6 +76,10 @@ class TaskService:
         
         if project_id:
             query = query.filter(Task.project_id == project_id)
+        else:
+            query = query.outerjoin(Project, Task.project_id == Project.id).filter(
+                or_(Task.project_id.is_(None), Project.status != "PROPOSED")
+            )
             
         if filter_type == "active":
             # Active: OPEN, EVIDENCE_SUBMITTED, OVERDUE
@@ -65,7 +89,19 @@ class TaskService:
             # Completed: DONE, EXCUSED
             query = query.filter(Task.status.in_(["DONE", "EXCUSED"]))
         
-        return query.order_by(Task.created_at.desc()).all()
+        tasks = query.order_by(Task.created_at.desc()).all()
+
+        if project_id:
+            project = db.query(Project).filter(
+                Project.id == project_id,
+                Project.user_id == user.id
+            ).first()
+            if project and project.status == "PROPOSED":
+                base = date.today()
+                for task in tasks:
+                    TaskService._apply_proposed_deadline(task, base)
+
+        return tasks
     
     @staticmethod
     def get_task(db: Session, task_id: str, user: User) -> Task:
@@ -77,6 +113,14 @@ class TaskService:
         
         if not task:
             raise HTTPException(status_code=404, detail="Task not found")
+
+        if task.project_id:
+            project = db.query(Project).filter(
+                Project.id == task.project_id,
+                Project.user_id == user.id
+            ).first()
+            if project and project.status == "PROPOSED":
+                TaskService._apply_proposed_deadline(task, date.today())
         return task
     
     @staticmethod
@@ -114,6 +158,7 @@ class TaskService:
         """Update task details (for PROPOSED project tasks)."""
         task = TaskService.get_task(db, task_id, user)
 
+        project = None
         if task.project_id:
             project = db.query(Project).filter(
                 Project.id == task.project_id,
@@ -135,6 +180,8 @@ class TaskService:
             task.evidence_criteria = updates["evidence_criteria"]
         if "deadline" in updates and updates["deadline"] is not None:
             task.deadline = updates["deadline"]
+            if project and project.status == "PROPOSED":
+                task.proposal_offset_days = (updates["deadline"].date() - date.today()).days
         if "tags" in updates and updates["tags"] is not None:
             task.tags = json.dumps(updates["tags"], ensure_ascii=False)
         if "scheduled_time" in updates:
@@ -323,11 +370,12 @@ class TaskService:
         """
         now = datetime.utcnow()
         
-        # Find tasks that are OPEN and past deadline
-        overdue_tasks = db.query(Task).filter(
+        # Find tasks that are OPEN and past deadline (exclude PROPOSED project tasks)
+        overdue_tasks = db.query(Task).outerjoin(Project, Task.project_id == Project.id).filter(
             Task.status == "OPEN",
             Task.deadline.isnot(None),
-            Task.deadline < now
+            Task.deadline < now,
+            or_(Task.project_id.is_(None), Project.status != "PROPOSED")
         ).all()
         
         for task in overdue_tasks:

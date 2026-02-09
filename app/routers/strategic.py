@@ -61,10 +61,11 @@ def get_tasks_from_strategic_projects(
         return []
     
     # Get tasks from these projects
-    tasks = db.query(Task).filter(
+    tasks = db.query(Task).join(Project, Task.project_id == Project.id).filter(
         Task.user_id == current_user.id,
         Task.project_id.in_(strategic_project_ids),
-        Task.status != "DONE"
+        Task.status != "DONE",
+        Project.status != "PROPOSED"
     ).order_by(Task.deadline.asc()).limit(6).all()
     
     # Format response

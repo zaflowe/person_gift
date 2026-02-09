@@ -7,6 +7,7 @@ from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 
 from app.database import get_db
 from app.dependencies import get_current_user
@@ -121,9 +122,10 @@ async def chat(
             elif intent == "view_schedule":
                 # Fetch today's schedule
                 today = datetime.now().date()
-                tasks = db.query(Task).filter(
+                tasks = db.query(Task).outerjoin(Project, Task.project_id == Project.id).filter(
                     Task.user_id == current_user.id,
-                    Task.scheduled_time != None
+                    Task.scheduled_time != None,
+                    or_(Task.project_id.is_(None), Project.status != "PROPOSED")
                 ).all()
                 
                 today_tasks = [
@@ -685,13 +687,15 @@ async def login_greeting(
 
     # Gather lightweight stats
     open_statuses = ["OPEN", "EVIDENCE_SUBMITTED", "OVERDUE"]
-    open_count = db.query(Task).filter(
+    open_count = db.query(Task).outerjoin(Project, Task.project_id == Project.id).filter(
         Task.user_id == current_user.id,
-        Task.status.in_(open_statuses)
+        Task.status.in_(open_statuses),
+        or_(Task.project_id.is_(None), Project.status != "PROPOSED")
     ).count()
-    overdue_count = db.query(Task).filter(
+    overdue_count = db.query(Task).outerjoin(Project, Task.project_id == Project.id).filter(
         Task.user_id == current_user.id,
-        Task.status == "OVERDUE"
+        Task.status == "OVERDUE",
+        or_(Task.project_id.is_(None), Project.status != "PROPOSED")
     ).count()
     habits_count = db.query(HabitTemplate).filter(
         HabitTemplate.user_id == current_user.id
@@ -704,10 +708,11 @@ async def login_greeting(
         Project.status.in_(["PROPOSED", "ACTIVE"])
     ).count()
 
-    next_task = db.query(Task).filter(
+    next_task = db.query(Task).outerjoin(Project, Task.project_id == Project.id).filter(
         Task.user_id == current_user.id,
         Task.status.in_(open_statuses),
-        Task.deadline.isnot(None)
+        Task.deadline.isnot(None),
+        or_(Task.project_id.is_(None), Project.status != "PROPOSED")
     ).order_by(Task.deadline.asc()).first()
 
     next_task_title = next_task.title if next_task else None

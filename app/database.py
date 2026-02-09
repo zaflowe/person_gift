@@ -41,6 +41,8 @@ def init_db():
         _ensure_tasks_long_template_column()
         _ensure_habit_evidence_criteria_column()
         _ensure_conversation_planning_session_id()
+        _ensure_tasks_proposal_offset_column()
+        _ensure_milestones_proposal_offset_column()
     except Exception as e:
         print(f"⚠️ Migration warning: {e}")
 
@@ -91,3 +93,35 @@ def _ensure_conversation_planning_session_id():
             conn.execute(text("ALTER TABLE conversation_sessions ADD COLUMN planning_session_id VARCHAR"))
         else:
             conn.execute(text("ALTER TABLE conversation_sessions ADD COLUMN IF NOT EXISTS planning_session_id VARCHAR"))
+
+
+def _ensure_tasks_proposal_offset_column():
+    inspector = inspect(engine)
+    if "tasks" not in inspector.get_table_names():
+        return
+
+    columns = [col["name"] for col in inspector.get_columns("tasks")]
+    if "proposal_offset_days" in columns:
+        return
+
+    with engine.begin() as conn:
+        if settings.database_url.startswith("sqlite"):
+            conn.execute(text("ALTER TABLE tasks ADD COLUMN proposal_offset_days INTEGER"))
+        else:
+            conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS proposal_offset_days INTEGER"))
+
+
+def _ensure_milestones_proposal_offset_column():
+    inspector = inspect(engine)
+    if "milestones" not in inspector.get_table_names():
+        return
+
+    columns = [col["name"] for col in inspector.get_columns("milestones")]
+    if "proposal_offset_days" in columns:
+        return
+
+    with engine.begin() as conn:
+        if settings.database_url.startswith("sqlite"):
+            conn.execute(text("ALTER TABLE milestones ADD COLUMN proposal_offset_days INTEGER"))
+        else:
+            conn.execute(text("ALTER TABLE milestones ADD COLUMN IF NOT EXISTS proposal_offset_days INTEGER"))

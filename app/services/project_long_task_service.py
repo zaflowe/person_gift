@@ -7,6 +7,7 @@ from typing import List, Optional
 from sqlalchemy.orm import Session
 
 from app.models.project_long_task import ProjectLongTaskTemplate
+from app.models.project import Project
 from app.models.task import Task
 
 logger = logging.getLogger(__name__)
@@ -57,8 +58,10 @@ class ProjectLongTaskService:
         db.commit()
         db.refresh(template)
 
-        # Attempt to generate today's task if eligible
-        self.maybe_generate_today(db, template)
+        # Attempt to generate today's task only when project is ACTIVE
+        project = db.query(Project).filter(Project.id == project_id).first()
+        if project and project.status == "ACTIVE":
+            self.maybe_generate_today(db, template)
         return template
 
     def update_template(
@@ -112,7 +115,9 @@ class ProjectLongTaskService:
         if today is None:
             today = datetime.now()
 
-        templates = db.query(ProjectLongTaskTemplate).all()
+        templates = db.query(ProjectLongTaskTemplate).join(
+            Project, Project.id == ProjectLongTaskTemplate.project_id
+        ).filter(Project.status == "ACTIVE").all()
         created_count = 0
 
         for template in templates:
@@ -126,6 +131,9 @@ class ProjectLongTaskService:
         return created_count
 
     def maybe_generate_today(self, db: Session, template: ProjectLongTaskTemplate) -> int:
+        project = db.query(Project).filter(Project.id == template.project_id).first()
+        if not project or project.status != "ACTIVE":
+            return 0
         today = datetime.now()
         if not self._within_cycle(template, today):
             return 0

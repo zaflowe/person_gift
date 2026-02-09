@@ -59,9 +59,10 @@ def get_daily_reminder_data(
     tomorrow = now + timedelta(hours=24)
     
     # Get all incomplete tasks
-    incomplete_tasks = db.query(Task).filter(
+    incomplete_tasks = db.query(Task).outerjoin(Project, Task.project_id == Project.id).filter(
         Task.user_id == current_user.id,
-        Task.status.in_(["OPEN", "EVIDENCE_SUBMITTED"])
+        Task.status.in_(["OPEN", "EVIDENCE_SUBMITTED"]),
+        (Task.project_id.is_(None)) | (Project.status != "PROPOSED")
     ).all()
     
     # Categorize tasks

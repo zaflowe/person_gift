@@ -2,22 +2,60 @@
 import hashlib
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, date, timedelta, time
 from typing import List
 
 from sqlalchemy.orm import Session
 from fastapi import HTTPException
 
 from app.models.project import Project, Milestone
+from app.models.task import Task
+from app.models.project_long_task import ProjectLongTaskTemplate
 from app.models.user import User
 from app.schemas.project import ProjectCreate, MilestoneCreate, ProjectUpdate, MilestoneUpdate
 from app.services.ai_service import ai_service
+from app.services.project_long_task_service import project_long_task_service
 
 logger = logging.getLogger(__name__)
 
 
 class ProjectService:
     """Project business logic service."""
+
+    @staticmethod
+    def _apply_proposed_target_date(milestone: Milestone, base_date: date | None = None) -> None:
+        if milestone.proposal_offset_days is None:
+            return
+        base = base_date or date.today()
+        milestone.target_date = base + timedelta(days=milestone.proposal_offset_days)
+
+    @staticmethod
+    def _activate_project_items(db: Session, project: Project) -> None:
+        base_dt = project.user_confirmed_at or datetime.utcnow()
+        base_date = base_dt.date()
+
+        tasks = db.query(Task).filter(Task.project_id == project.id).all()
+        for task in tasks:
+            if task.proposal_offset_days is None:
+                continue
+            target_date = base_date + timedelta(days=task.proposal_offset_days)
+            deadline_time = task.deadline.time() if task.deadline else time(23, 59, 59)
+            task.deadline = datetime.combine(target_date, deadline_time)
+            task.proposal_offset_days = None
+
+        milestones = db.query(Milestone).filter(Milestone.project_id == project.id).all()
+        for milestone in milestones:
+            if milestone.proposal_offset_days is None:
+                continue
+            milestone.target_date = base_date + timedelta(days=milestone.proposal_offset_days)
+            milestone.proposal_offset_days = None
+
+        templates = db.query(ProjectLongTaskTemplate).filter(
+            ProjectLongTaskTemplate.project_id == project.id
+        ).all()
+        for template in templates:
+            template.started_at = base_dt
+            template.updated_at = datetime.utcnow()
     
     @staticmethod
     def create_project(db: Session, user: User, project_data: ProjectCreate) -> Project:
@@ -172,11 +210,23 @@ class ProjectService:
             
             project.agreement_hash = agreement_hash
             project.status = "ACTIVE"
+            ProjectService._activate_project_items(db, project)
             
             logger.info(f"Project {project_id} activated with hash {agreement_hash}")
         
         db.commit()
         db.refresh(project)
+
+        if project.status == "ACTIVE":
+            templates = db.query(ProjectLongTaskTemplate).filter(
+                ProjectLongTaskTemplate.project_id == project.id
+            ).all()
+            for template in templates:
+                try:
+                    project_long_task_service.maybe_generate_today(db, template)
+                except Exception:
+                    pass
+
         return project
     
     @staticmethod
@@ -188,9 +238,13 @@ class ProjectService:
     ) -> Milestone:
         """Create a milestone for a project."""
         project = ProjectService.get_project(db, project_id, user)
-        
+        proposal_offset_days = None
+        if project.status == "PROPOSED" and milestone_data.target_date:
+            proposal_offset_days = (milestone_data.target_date - date.today()).days
+
         milestone = Milestone(
             project_id=project.id,
+            proposal_offset_days=proposal_offset_days,
             **milestone_data.dict()
         )
         db.add(milestone)
@@ -202,9 +256,16 @@ class ProjectService:
     def get_milestones(db: Session, project_id: str, user: User) -> List[Milestone]:
         """Get project milestones."""
         project = ProjectService.get_project(db, project_id, user)
-        return db.query(Milestone).filter(
+        milestones = db.query(Milestone).filter(
             Milestone.project_id == project.id
         ).all()
+
+        if project.status == "PROPOSED":
+            base = date.today()
+            for milestone in milestones:
+                ProjectService._apply_proposed_target_date(milestone, base)
+
+        return milestones
         
     @staticmethod
     def update_milestone(
@@ -233,6 +294,8 @@ class ProjectService:
             milestone.is_critical = update_data.is_critical
         if update_data.target_date is not None:
             milestone.target_date = update_data.target_date
+            if project.status == "PROPOSED":
+                milestone.proposal_offset_days = (update_data.target_date - date.today()).days
             
         db.commit()
         db.refresh(milestone)

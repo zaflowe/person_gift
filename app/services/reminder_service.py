@@ -6,6 +6,7 @@ from sqlalchemy import or_
 
 from app.models.user import User
 from app.models.task import Task
+from app.models.project import Project
 from app.models.conversation import ConversationSession
 from app.database import SessionLocal
 
@@ -19,17 +20,17 @@ def generate_daily_reminder_content(db: Session, user: User) -> str:
     today_display = (datetime.utcnow() + timedelta(hours=8)).strftime("%m-%d") 
     
     # 1. Incomplete Tasks (Total count)
-    incomplete_count = db.query(Task).filter(
-        Task.user_id == user.id,
-        Task.status != "DONE",
-        Task.status != "LOCKED"
-    ).count()
-
-    # 2. Overdue Tasks
-    overdue_query = db.query(Task).filter(
+    base_query = db.query(Task).outerjoin(Project, Task.project_id == Project.id).filter(
         Task.user_id == user.id,
         Task.status != "DONE",
         Task.status != "LOCKED",
+        or_(Task.project_id.is_(None), Project.status != "PROPOSED")
+    )
+
+    incomplete_count = base_query.count()
+
+    # 2. Overdue Tasks
+    overdue_query = base_query.filter(
         Task.deadline < now
     ).order_by(Task.deadline.asc())
     
@@ -38,10 +39,7 @@ def generate_daily_reminder_content(db: Session, user: User) -> str:
 
     # 3. Due Soon (Next 24h)
     tomorrow = now + timedelta(days=1)
-    due_soon_query = db.query(Task).filter(
-        Task.user_id == user.id,
-        Task.status != "DONE",
-        Task.status != "LOCKED",
+    due_soon_query = base_query.filter(
         Task.deadline >= now,
         Task.deadline <= tomorrow
     ).order_by(Task.deadline.asc())

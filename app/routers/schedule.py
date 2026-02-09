@@ -5,11 +5,13 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 
 from app.database import get_db
 from app.dependencies import get_current_user
 from app.models.user import User
 from app.models.task import Task
+from app.models.project import Project
 from app.schemas.schedule import (
     DailySchedule,
     WeeklySchedule,
@@ -34,9 +36,10 @@ async def get_today_schedule(
     
     # Get all tasks scheduled for today
     # Note: Only get tasks where scheduled_time is not None (meaning they have a time block)
-    tasks = db.query(Task).filter(
+    tasks = db.query(Task).outerjoin(Project, Task.project_id == Project.id).filter(
         Task.user_id == current_user.id,
-        Task.scheduled_time != None
+        Task.scheduled_time != None,
+        or_(Task.project_id.is_(None), Project.status != "PROPOSED")
     ).all()
     
     # Filter for today
@@ -66,10 +69,11 @@ async def get_today_schedule(
     # We query all tasks with deadline, then filter for today in code 
     # (SQLite date comparison can be tricky if not stored consistently)
     # Optimization: Filter by range in DB if possible, but python filter is safer for now
-    due_today_tasks = db.query(Task).filter(
+    due_today_tasks = db.query(Task).outerjoin(Project, Task.project_id == Project.id).filter(
         Task.user_id == current_user.id,
         Task.deadline != None,
-        Task.status.in_(["OPEN", "EVIDENCE_SUBMITTED"])
+        Task.status.in_(["OPEN", "EVIDENCE_SUBMITTED"]),
+        or_(Task.project_id.is_(None), Project.status != "PROPOSED")
     ).all()
 
     due_tasks = []
@@ -110,18 +114,20 @@ async def get_week_schedule(
     end_date = start_date + timedelta(days=6)
     
     # Get all time-blocked tasks in range
-    scheduled_tasks = db.query(Task).filter(
+    scheduled_tasks = db.query(Task).outerjoin(Project, Task.project_id == Project.id).filter(
         Task.user_id == current_user.id,
         Task.scheduled_time >= datetime.combine(start_date, dt_time.min),
-        Task.scheduled_time <= datetime.combine(end_date, dt_time.max)
+        Task.scheduled_time <= datetime.combine(end_date, dt_time.max),
+        or_(Task.project_id.is_(None), Project.status != "PROPOSED")
     ).all()
 
     # Get all due tasks in range (for right sidebar)
-    due_tasks_query = db.query(Task).filter(
+    due_tasks_query = db.query(Task).outerjoin(Project, Task.project_id == Project.id).filter(
         Task.user_id == current_user.id,
         Task.deadline >= datetime.combine(start_date, dt_time.min),
         Task.deadline <= datetime.combine(end_date, dt_time.max),
-        Task.status.in_(["OPEN", "EVIDENCE_SUBMITTED"]) # Only show open tasks
+        Task.status.in_(["OPEN", "EVIDENCE_SUBMITTED"]), # Only show open tasks
+        or_(Task.project_id.is_(None), Project.status != "PROPOSED")
     ).all()
     
     # Group by date
@@ -201,6 +207,14 @@ async def schedule_task(
     
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
+
+    if task.project_id:
+        project = db.query(Project).filter(
+            Project.id == task.project_id,
+            Project.user_id == current_user.id
+        ).first()
+        if project and project.status == "PROPOSED":
+            raise HTTPException(status_code=400, detail="提案中的项目任务暂不能安排时间")
     
     # Combine date and time
     scheduled_datetime = datetime.combine(request.scheduled_date, request.scheduled_time)

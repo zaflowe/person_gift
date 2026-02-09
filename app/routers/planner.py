@@ -3,7 +3,7 @@ import json
 import logging
 import re
 import uuid
-from datetime import datetime
+from datetime import datetime, date
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -228,6 +228,8 @@ async def commit_plan(
             
             logger.debug(f"Created project: {project.id}")
             
+            base_date = date.today()
+
             # 2. Create Tasks
             task_ids = []
             for i, task_data in enumerate(tasks_data):
@@ -245,6 +247,8 @@ async def commit_plan(
                 except Exception as e:
                     raise ValueError(f"Task {i} has invalid due_at format: {str(e)}")
                 
+                proposal_offset_days = (deadline.date() - base_date).days
+
                 task = Task(
                     id=str(uuid.uuid4()),
                     user_id=current_user.id,
@@ -252,6 +256,7 @@ async def commit_plan(
                     title=task_data["title"],
                     description=task_data.get("description", ""),
                     deadline=deadline,
+                    proposal_offset_days=proposal_offset_days,
                     evidence_type=task_data.get("evidence_type", "none"),
                     status="OPEN",
                     created_at=datetime.utcnow()
@@ -281,6 +286,10 @@ async def commit_plan(
                     except Exception:
                         target_date = None
 
+                proposal_offset_days = None
+                if target_date:
+                    proposal_offset_days = (target_date - base_date).days
+
                 milestone = Milestone(
                     id=str(uuid.uuid4()),
                     project_id=project.id,
@@ -288,6 +297,7 @@ async def commit_plan(
                     description=milestone_data.get("description", ""),
                     is_critical=bool(milestone_data.get("is_critical", False)),
                     target_date=target_date,
+                    proposal_offset_days=proposal_offset_days,
                     status="PENDING"
                 )
                 db.add(milestone)

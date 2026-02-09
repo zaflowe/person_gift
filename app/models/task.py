@@ -20,6 +20,7 @@ class Task(Base):
     evidence_type = Column(String, nullable=True)  # image/text/number/none
     evidence_criteria = Column(Text, nullable=True)
     deadline = Column(DateTime, nullable=True)
+    proposal_offset_days = Column(Integer, nullable=True)
     tags = Column(String, default="[]", nullable=False)  # JSON list of strings
     
     # Time blocking fields

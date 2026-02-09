@@ -2,7 +2,7 @@
 import uuid
 from datetime import datetime, date
 
-from sqlalchemy import Column, String, DateTime, ForeignKey, Boolean, Text, Date
+from sqlalchemy import Column, String, DateTime, ForeignKey, Boolean, Text, Date, Integer
 from sqlalchemy.orm import relationship
 
 from app.database import Base
@@ -49,6 +49,7 @@ class Milestone(Base):
     is_critical = Column(Boolean, default=False, nullable=False)
     status = Column(String, nullable=False, default="PENDING")  # PENDING/ACHIEVED/FAILED
     target_date = Column(Date, nullable=True)
+    proposal_offset_days = Column(Integer, nullable=True)
     achieved_at = Column(DateTime, nullable=True)
     
     # Relationships
