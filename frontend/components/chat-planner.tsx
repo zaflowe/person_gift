@@ -221,8 +221,8 @@ export default function ChatPlanner({ embedded = false, className }: { embedded?
             // Call conversation API
             const response = await sendChatMessage(userMessage, token, conversationId);
 
-            // Update conversation ID
-            if (!conversationId) {
+            // Always keep latest conversation ID (backend may roll to a new session)
+            if (response.conversation_id) {
                 setConversationId(response.conversation_id);
             }
 
@@ -287,6 +287,9 @@ export default function ChatPlanner({ embedded = false, className }: { embedded?
             const token = getToken();
             if (!token) throw new Error("请先登录");
             const response = await sendChatMessage(confirmMsg, token, conversationId);
+            if (response.conversation_id) {
+                setConversationId(response.conversation_id);
+            }
             setMessages(prev => [...prev, { role: "assistant", content: response.message }]);
 
             if (response.action_type === "create_project") {
