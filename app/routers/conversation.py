@@ -170,23 +170,25 @@ async def chat(
                     collected_info["gather_rounds"] = collected_info.get("gather_rounds", 0) + 1
                     if collected_info["gather_rounds"] >= 2:
                         info_complete = True
-                        ai_message = "已完成两轮信息确认，进入简报确认阶段。"
+                        ai_message = "???????????????????"
                 
                 messages.append({"role": "assistant", "content": ai_message})
                 session.messages = json.dumps(messages, ensure_ascii=False)
                 session.collected_info = json.dumps(collected_info, ensure_ascii=False)
-                db.commit()
                 
                 if info_complete:
-                    # Ready to plan
+                    session.stage = "brief_review"
+                    db.commit()
                     return ChatResponse(
                         conversation_id=session.id,
-                        action_type="ask_more",
-                        message=ai_message + "\n\n准备好了吗？我现在就为你生成计划。",
-                        stage="gathering",
+                        action_type="confirm_brief",
+                        message="????????????????Brief???????????????",
+                        plan=collected_info,
+                        stage=session.stage,
                         intent=intent
                     )
                 
+                db.commit()
                 return ChatResponse(
                     conversation_id=session.id,
                     action_type="ask_more",
