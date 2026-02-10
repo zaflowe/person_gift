@@ -60,6 +60,7 @@ function DashboardContent() {
     }, []);
 
     const pieData = studyStats?.distribution || [];
+    const allTimePieData = studyStats?.all_time_distribution || [];
 
     return (
         <div className="flex flex-col h-[calc(100vh-4rem)] p-6 max-w-[1600px] mx-auto gap-6 transition-all duration-300">
@@ -77,6 +78,7 @@ function DashboardContent() {
                                 todaySec={studyStats?.today_total_sec || 0}
                                 weekSec={studyStats?.week_total_sec || 0}
                                 distribution={pieData}
+                                allTimeDistribution={allTimePieData}
                             />
                         </div>
 

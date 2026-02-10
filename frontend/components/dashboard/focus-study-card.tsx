@@ -2,6 +2,7 @@
 
 import { AppCard } from "@/components/ui/app-card";
 import { Clock, Play } from "lucide-react";
+import { useState } from "react";
 import Link from "next/link";
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from "recharts";
 import { getProjectColorHex } from "@/lib/project-colors";
@@ -13,9 +14,11 @@ interface FocusStudyCardProps {
     todaySec: number;
     weekSec: number;
     distribution: Array<{ name: string; value: number; color?: string; project_id?: string }>;
+    allTimeDistribution: Array<{ name: string; value: number; color?: string; project_id?: string }>;
 }
 
-export function FocusStudyCard({ todaySec, weekSec, distribution }: FocusStudyCardProps) {
+export function FocusStudyCard({ todaySec, weekSec, distribution, allTimeDistribution }: FocusStudyCardProps) {
+    const [view, setView] = useState<"week" | "all">("week");
     const todayMin = Math.floor(todaySec / 60);
     const weekMin = Math.floor(weekSec / 60);
 
@@ -23,7 +26,7 @@ export function FocusStudyCard({ todaySec, weekSec, distribution }: FocusStudyCa
 
     // 1. Unified Data Source: Calculate total from distribution
     // Ensure we handle potential empty or malformed data gracefully
-    const validDistribution = distribution || [];
+    const validDistribution = (view === "week" ? distribution : allTimeDistribution) || [];
 
     // Use raw seconds for precision
     const calculatedTotalSeconds = validDistribution.reduce((acc, curr) => acc + (curr.value || 0), 0);
@@ -80,6 +83,22 @@ export function FocusStudyCard({ todaySec, weekSec, distribution }: FocusStudyCa
                             <p className="text-xl font-bold font-mono">0s</p>
                         </div>
                     </div>
+                    <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1 bg-slate-100 rounded-full p-0.5 text-[11px]">
+                            <button
+                                className={`px-2 py-0.5 rounded-full transition ${view === "week" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500"}`}
+                                onClick={() => setView("week")}
+                            >
+                                本周
+                            </button>
+                            <button
+                                className={`px-2 py-0.5 rounded-full transition ${view === "all" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500"}`}
+                                onClick={() => setView("all")}
+                            >
+                                统计
+                            </button>
+                        </div>
+                    </div>
                 </div>
 
                 <div className="flex-1 flex flex-col items-center justify-center p-6 text-center space-y-4">
@@ -109,7 +128,7 @@ export function FocusStudyCard({ todaySec, weekSec, distribution }: FocusStudyCa
                         <Clock className="w-5 h-5" />
                     </div>
                     <div>
-                        <p className="text-xs text-muted-foreground">本周专注</p>
+                        <p className="text-xs text-muted-foreground">{view === "week" ? "本周专注" : "累计专注"}</p>
                         <div className="flex items-baseline gap-1">
                             <span className="text-2xl font-bold font-mono">{Math.floor(displayTotalSeconds / 3600)}</span>
                             <span className="text-xs text-muted-foreground">h</span>
@@ -121,11 +140,27 @@ export function FocusStudyCard({ todaySec, weekSec, distribution }: FocusStudyCa
                     </div>
                 </div>
 
-                <Link href="/focus">
-                    <button className="w-8 h-8 flex items-center justify-center bg-slate-100 text-slate-600 rounded-full hover:bg-primary hover:text-white transition">
-                        <Play className="w-3.5 h-3.5 ml-0.5" />
-                    </button>
-                </Link>
+                <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1 bg-slate-100 rounded-full p-0.5 text-[11px]">
+                        <button
+                            className={`px-2 py-0.5 rounded-full transition ${view === "week" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500"}`}
+                            onClick={() => setView("week")}
+                        >
+                            本周
+                        </button>
+                        <button
+                            className={`px-2 py-0.5 rounded-full transition ${view === "all" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500"}`}
+                            onClick={() => setView("all")}
+                        >
+                            统计
+                        </button>
+                    </div>
+                    <Link href="/focus">
+                        <button className="w-8 h-8 flex items-center justify-center bg-slate-100 text-slate-600 rounded-full hover:bg-primary hover:text-white transition">
+                            <Play className="w-3.5 h-3.5 ml-0.5" />
+                        </button>
+                    </Link>
+                </div>
             </div>
 
             {/* Chart Area */}

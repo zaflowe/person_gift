@@ -40,7 +40,9 @@ class SessionResponse(BaseModel):
 class StudyStats(BaseModel):
     today_total_sec: int
     week_total_sec: int
-    distribution: List[dict] # {name: str, value: int}
+    distribution: List[dict] # This week distribution
+    all_time_total_sec: int
+    all_time_distribution: List[dict]
 
 @router.post("/sessions", response_model=SessionResponse)
 async def create_session(
@@ -134,9 +136,40 @@ async def get_study_stats(
             "value": duration,
             "project_id": pid
         })
+
+    # All-time Total
+    all_time_sec = db.query(func.sum(StudySession.duration_sec)).filter(
+        StudySession.user_id == current_user.id,
+        StudySession.status == "completed"
+    ).scalar() or 0
+
+    # Distribution (All Time)
+    all_sessions = db.query(StudySession).filter(
+        StudySession.user_id == current_user.id,
+        StudySession.status == "completed"
+    ).all()
+
+    all_dist_map = {}
+    for s in all_sessions:
+        p_id = s.project_id
+        name = s.project_name_snapshot or "Other"
+        key = (p_id, name)
+        if key not in all_dist_map:
+            all_dist_map[key] = 0
+        all_dist_map[key] += s.duration_sec
+
+    all_time_distribution = []
+    for (pid, pname), duration in all_dist_map.items():
+        all_time_distribution.append({
+            "name": pname,
+            "value": duration,
+            "project_id": pid
+        })
     
     return StudyStats(
         today_total_sec=int(today_sec),
         week_total_sec=int(week_sec),
-        distribution=distribution
+        distribution=distribution,
+        all_time_total_sec=int(all_time_sec),
+        all_time_distribution=all_time_distribution
     )
