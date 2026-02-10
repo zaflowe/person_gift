@@ -158,7 +158,7 @@ async def chat(
                 )
 
             elif intent == "complex_project":
-                new_session.stage = "gathering"
+                session.stage = "gathering"
                 info_complete, ai_message = conversation_service.gather_information(
                     collected_info,
                     messages
@@ -172,27 +172,27 @@ async def chat(
                         ai_message = "Info confirmed. Moving to brief confirmation."
 
                 messages.append({"role": "assistant", "content": ai_message})
-                new_session.messages = json.dumps(messages, ensure_ascii=False)
-                new_session.collected_info = json.dumps(collected_info, ensure_ascii=False)
+                session.messages = json.dumps(messages, ensure_ascii=False)
+                session.collected_info = json.dumps(collected_info, ensure_ascii=False)
 
                 if info_complete:
-                    new_session.stage = "brief_review"
+                    session.stage = "brief_review"
                     db.commit()
                     return ChatResponse(
-                        conversation_id=new_session.id,
+                        conversation_id=session.id,
                         action_type="confirm_brief",
                         message="Info collected. Please confirm the brief to generate the plan.",
                         plan=collected_info,
-                        stage=new_session.stage,
+                        stage=session.stage,
                         intent=intent
                     )
 
                 db.commit()
                 return ChatResponse(
-                    conversation_id=new_session.id,
+                    conversation_id=session.id,
                     action_type="ask_more",
                     message=ai_message,
-                    stage=new_session.stage,
+                    stage=session.stage,
                     intent=intent
                 )
 
