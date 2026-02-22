@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import List, Optional
 
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 from app.models.project_long_task import ProjectLongTaskTemplate
 from app.models.project import Project
@@ -115,6 +116,9 @@ class ProjectLongTaskService:
         if today is None:
             today = datetime.now()
 
+        # Defensive cleanup for historical duplicates before daily generation.
+        self.cleanup_duplicate_generated_tasks(db)
+
         templates = db.query(ProjectLongTaskTemplate).join(
             Project, Project.id == ProjectLongTaskTemplate.project_id
         ).filter(Project.status == "ACTIVE").all()
@@ -123,11 +127,8 @@ class ProjectLongTaskService:
         for template in templates:
             if not self._within_cycle(template, today):
                 continue
-            if self._should_create_for_date(db, template, today):
-                created_count += self._create_task_for_date(db, template, today)
+            created_count += self._safe_create_for_date(db, template, today)
 
-        if created_count:
-            db.commit()
         return created_count
 
     def maybe_generate_today(self, db: Session, template: ProjectLongTaskTemplate) -> int:
@@ -137,12 +138,39 @@ class ProjectLongTaskService:
         today = datetime.now()
         if not self._within_cycle(template, today):
             return 0
-        if self._should_create_for_date(db, template, today):
-            created = self._create_task_for_date(db, template, today)
-            if created:
-                db.commit()
-            return created
-        return 0
+        return self._safe_create_for_date(db, template, today)
+
+    def cleanup_duplicate_generated_tasks(self, db: Session, template_id: Optional[str] = None) -> int:
+        """
+        Keep only one task per (long_task_template_id, generated_for_date).
+        Prefer earliest created task to keep history stable.
+        """
+        query = db.query(Task).filter(
+            Task.long_task_template_id.isnot(None),
+            Task.generated_for_date.isnot(None),
+        ).order_by(Task.long_task_template_id.asc(), Task.generated_for_date.asc(), Task.created_at.asc(), Task.id.asc())
+
+        if template_id:
+            query = query.filter(Task.long_task_template_id == template_id)
+
+        tasks = query.all()
+        seen = set()
+        to_delete = []
+        for task in tasks:
+            key = (task.long_task_template_id, task.generated_for_date)
+            if key in seen:
+                to_delete.append(task)
+            else:
+                seen.add(key)
+
+        if not to_delete:
+            return 0
+
+        for task in to_delete:
+            db.delete(task)
+        db.commit()
+        logger.warning("Deduplicated %s duplicate long-task generated tasks", len(to_delete))
+        return len(to_delete)
 
     def _within_cycle(self, template: ProjectLongTaskTemplate, today: datetime) -> bool:
         if not template.started_at:
@@ -181,6 +209,31 @@ class ProjectLongTaskService:
             Task.generated_for_date == start_of_day,
         ).first()
         return existing is None
+
+    def _safe_create_for_date(self, db: Session, template: ProjectLongTaskTemplate, today: datetime) -> int:
+        # Clean historical duplicates for this template first.
+        self.cleanup_duplicate_generated_tasks(db, template_id=template.id)
+
+        if not self._should_create_for_date(db, template, today):
+            return 0
+
+        try:
+            created = self._create_task_for_date(db, template, today)
+            if created:
+                db.commit()
+                # Final guard in case concurrent writers slipped in before commit.
+                self.cleanup_duplicate_generated_tasks(db, template_id=template.id)
+            return created
+        except IntegrityError:
+            db.rollback()
+            logger.info(
+                "Skipped duplicate long task generation for template=%s date=%s due to integrity constraint",
+                template.id,
+                today.date().isoformat(),
+            )
+            # Make sure duplicates are collapsed to one if a race happened.
+            self.cleanup_duplicate_generated_tasks(db, template_id=template.id)
+            return 0
 
     def _create_task_for_date(self, db: Session, template: ProjectLongTaskTemplate, today: datetime) -> int:
         start_of_day = datetime(today.year, today.month, today.day)

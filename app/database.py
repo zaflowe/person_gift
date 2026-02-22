@@ -43,6 +43,8 @@ def init_db():
         _ensure_conversation_planning_session_id()
         _ensure_tasks_proposal_offset_column()
         _ensure_milestones_proposal_offset_column()
+        _dedupe_long_task_generated_tasks()
+        _ensure_long_task_daily_unique_index()
     except Exception as e:
         print(f"⚠️ Migration warning: {e}")
 
@@ -125,3 +127,45 @@ def _ensure_milestones_proposal_offset_column():
             conn.execute(text("ALTER TABLE milestones ADD COLUMN proposal_offset_days INTEGER"))
         else:
             conn.execute(text("ALTER TABLE milestones ADD COLUMN IF NOT EXISTS proposal_offset_days INTEGER"))
+
+
+def _dedupe_long_task_generated_tasks():
+    inspector = inspect(engine)
+    if "tasks" not in inspector.get_table_names():
+        return
+
+    with engine.begin() as conn:
+        conn.execute(text("""
+            DELETE FROM tasks
+            WHERE id IN (
+                SELECT id FROM (
+                    SELECT
+                        id,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY long_task_template_id, generated_for_date
+                            ORDER BY created_at ASC, id ASC
+                        ) AS rn
+                    FROM tasks
+                    WHERE long_task_template_id IS NOT NULL
+                      AND generated_for_date IS NOT NULL
+                ) ranked
+                WHERE ranked.rn > 1
+            )
+        """))
+
+
+def _ensure_long_task_daily_unique_index():
+    inspector = inspect(engine)
+    if "tasks" not in inspector.get_table_names():
+        return
+
+    index_name = "uq_tasks_long_template_generated_for_date"
+    existing_indexes = {idx["name"] for idx in inspector.get_indexes("tasks")}
+    if index_name in existing_indexes:
+        return
+
+    with engine.begin() as conn:
+        conn.execute(text(
+            f"CREATE UNIQUE INDEX IF NOT EXISTS {index_name} "
+            "ON tasks (long_task_template_id, generated_for_date)"
+        ))
