@@ -106,7 +106,6 @@ app.include_router(dashboard_v2.router)
 app.include_router(reminder_inject.router)
 app.include_router(habits.router)
 app.include_router(project_long_tasks.router)
-app.include_router(openclaw.router)
 
 # API-prefixed aliases for frontend calls
 app.include_router(tasks.router, prefix="/api")
