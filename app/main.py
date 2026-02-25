@@ -26,7 +26,6 @@ from app.routers import (
     reminder_inject,
     habits,
     project_long_tasks,
-    openclaw,
 )
 
 logger = logging.getLogger(__name__)
