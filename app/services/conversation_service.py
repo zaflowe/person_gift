@@ -158,6 +158,15 @@ PLAN_REFINEMENT_PROMPT = f"""{YAN_YAN_CORE_IDENTITY}
 """
 
 
+PLAN_REFINEMENT_PROMPT = PLAN_REFINEMENT_PROMPT + """
+
+新增结构要求：
+- 返回的任务应尽量通过 milestone_index（0-based）标明所属里程碑
+- 若使用 milestones[i].tasks 嵌套形式，也要同时保持任务字段完整
+- 不属于里程碑的任务可保留在顶层 tasks 中
+"""
+
+
 class ConversationService:
     """Intelligent conversation service for multi-turn planning."""
     

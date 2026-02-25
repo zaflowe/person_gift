@@ -26,7 +26,21 @@ export interface PlanResponse {
             due_at: string;
             evidence_type?: string;
             tags?: string[];
+            milestone_index?: number;
         }>;
+        milestones?: Array<{
+            title: string;
+            description?: string;
+            due_at?: string;
+            tasks?: Array<{
+                title: string;
+                description?: string;
+                due_at: string;
+                evidence_type?: string;
+                milestone_index?: number;
+            }>;
+        }>;
+        long_tasks?: Array<Record<string, unknown>>;
         rationale?: string;
     };
 }

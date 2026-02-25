@@ -1,22 +1,34 @@
 """Main FastAPI application."""
 import logging
+import traceback
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, Depends
-from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-import traceback
-from app.dependencies import get_current_user
-from app.models.user import User
+from fastapi.responses import JSONResponse
 
 from app.database import init_db
-from app.routers import auth, tasks, projects, exemptions, placeholders, dashboard, planner, conversation, schedule, metrics, study
-from app.routers import dashboard_v2, system_tasks, reminder_inject, habits, project_long_tasks
 from app.services.scheduler import start_scheduler, stop_scheduler
+from app.routers import (
+    auth,
+    system_tasks,
+    tasks,
+    projects,
+    exemptions,
+    dashboard,
+    planner,
+    conversation,
+    schedule,
+    placeholders,
+    metrics,
+    study,
+    dashboard_v2,
+    reminder_inject,
+    habits,
+    project_long_tasks,
+    openclaw,
+)
 
-
-# Configure logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -95,6 +107,7 @@ app.include_router(dashboard_v2.router)
 app.include_router(reminder_inject.router)
 app.include_router(habits.router)
 app.include_router(project_long_tasks.router)
+app.include_router(openclaw.router)
 
 # API-prefixed aliases for frontend calls
 app.include_router(tasks.router, prefix="/api")

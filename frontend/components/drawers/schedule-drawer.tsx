@@ -11,9 +11,10 @@ interface ScheduleDrawerProps {
     isOpen: boolean;
     onClose: () => void;
     task: Task | null;
+    extraPatch?: Record<string, unknown>;
 }
 
-export function ScheduleDrawer({ isOpen, onClose, task }: ScheduleDrawerProps) {
+export function ScheduleDrawer({ isOpen, onClose, task, extraPatch }: ScheduleDrawerProps) {
     const [loading, setLoading] = useState(false);
     const [start, setStart] = useState("");
     const [deadline, setDeadline] = useState("");
@@ -59,6 +60,7 @@ export function ScheduleDrawer({ isOpen, onClose, task }: ScheduleDrawerProps) {
             await apiPatch(`/api/tasks/${task.id}`, {
                 scheduled_time: start ? new Date(start).toISOString() : null,
                 deadline: deadline ? new Date(deadline).toISOString() : null,
+                ...(extraPatch || {}),
                 // If scheduled, duration is implied or can be calced. For now keep simple.
             });
             mutate("/api/tasks");

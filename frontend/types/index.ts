@@ -12,7 +12,7 @@ export interface Token {
 }
 
 // Task 状态
-export type TaskStatus = "OPEN" | "EVIDENCE_SUBMITTED" | "OVERDUE" | "DONE" | "EXCUSED";
+export type TaskStatus = "OPEN" | "EVIDENCE_SUBMITTED" | "OVERDUE" | "DONE" | "EXCUSED" | "LOCKED";
 
 export interface Task {
     id: string;
@@ -26,9 +26,13 @@ export interface Task {
     evidence_type?: string;
     evidence_criteria?: string;
     project_id?: string;
+    milestone_id?: string;
     long_task_template_id?: string;
+    board_lane?: "IN_PROGRESS" | "TODO" | null;
+    board_lane_updated_at?: string;
     completed_at?: string;
     created_at: string;
+    updated_at?: string;
     scheduled_date?: string;
     scheduled_time?: string;
     duration?: number;
@@ -70,12 +74,14 @@ export interface Project {
 export interface Milestone {
     id: string;
     project_id: string;
+    order_index?: number;
     title: string;
     description?: string;
     is_critical: boolean;
     status: "PENDING" | "ACHIEVED" | "FAILED";
     target_date?: string;
     achieved_at?: string;
+    is_unlocked?: boolean;
 }
 
 // Exemption

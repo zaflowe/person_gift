@@ -22,6 +22,13 @@ export interface FixedBlock {
     end_time: string;
     days_of_week: number[];
     color?: string;
+    source_type?: "fixed_block" | "project_long_task";
+    readonly?: boolean;
+    project_id?: string;
+    project_title?: string;
+    template_id?: string;
+    frequency_mode?: "interval" | "specific_days";
+    interval_days?: number;
 }
 
 export const getHabitTemplates = async (): Promise<HabitTemplate[]> => {

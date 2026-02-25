@@ -57,6 +57,7 @@ class MilestoneCreate(BaseModel):
     description: Optional[str] = None
     is_critical: bool = False
     target_date: Optional[date] = None
+    order_index: Optional[int] = None
 
 
 class MilestoneUpdate(BaseModel):
@@ -65,6 +66,7 @@ class MilestoneUpdate(BaseModel):
     description: Optional[str] = None
     is_critical: Optional[bool] = None
     target_date: Optional[date] = None
+    order_index: Optional[int] = None
 
 
 
@@ -72,12 +74,14 @@ class MilestoneResponse(BaseModel):
     """Schema for milestone response."""
     id: str
     project_id: str
+    order_index: int = 0
     title: str
     description: Optional[str]
     is_critical: bool
     status: str
     target_date: Optional[date]
     achieved_at: Optional[datetime]
+    is_unlocked: Optional[bool] = None
     
     class Config:
         from_attributes = True

@@ -59,6 +59,41 @@ def _normalize_plan_input(plan: dict) -> dict:
 
     if "milestones" not in plan or not isinstance(plan.get("milestones"), list):
         plan["milestones"] = []
+    else:
+        # Flatten nested milestone tasks into top-level tasks while preserving grouping.
+        flattened_tasks = []
+        for idx, milestone in enumerate(plan["milestones"]):
+            if not isinstance(milestone, dict):
+                continue
+            nested_tasks = milestone.get("tasks")
+            if isinstance(nested_tasks, list):
+                for task in nested_tasks:
+                    if not isinstance(task, dict):
+                        continue
+                    task_copy = dict(task)
+                    task_copy.setdefault("milestone_index", idx)
+                    if not task_copy.get("due_at") and task_copy.get("deadline"):
+                        task_copy["due_at"] = task_copy.get("deadline")
+                    flattened_tasks.append(task_copy)
+        if flattened_tasks:
+            existing_keys = {
+                (
+                    (t.get("title") or "").strip(),
+                    (t.get("due_at") or t.get("deadline") or "").strip(),
+                    t.get("milestone_index"),
+                )
+                for t in plan["tasks"]
+                if isinstance(t, dict)
+            }
+            for task in flattened_tasks:
+                key = (
+                    (task.get("title") or "").strip(),
+                    (task.get("due_at") or task.get("deadline") or "").strip(),
+                    task.get("milestone_index"),
+                )
+                if key not in existing_keys:
+                    plan["tasks"].append(task)
+                    existing_keys.add(key)
 
     if "long_tasks" not in plan or not isinstance(plan.get("long_tasks"), list):
         plan["long_tasks"] = []
@@ -108,6 +143,31 @@ def _normalize_plan_input(plan: dict) -> dict:
         ]
 
     return plan
+
+
+def _parse_plan_datetime(value):
+    if not value:
+        return None
+    if not isinstance(value, str):
+        return None
+    raw = value
+    if raw.endswith("Z"):
+        raw = raw.replace("Z", "+00:00")
+    try:
+        # Keep backward compatibility with old +08:00 stripping behavior.
+        return datetime.fromisoformat(raw.replace("+08:00", ""))
+    except Exception:
+        return None
+
+
+def _milestone_ordered_list(milestones_data: list[dict]) -> list[tuple[int, dict, datetime | None]]:
+    items: list[tuple[int, dict, datetime | None]] = []
+    for idx, m in enumerate(milestones_data):
+        if not isinstance(m, dict) or not m.get("title"):
+            continue
+        due_dt = _parse_plan_datetime(m.get("due_at") or m.get("deadline"))
+        items.append((idx, m, due_dt))
+    return items
 
 
 @router.post("/plan", response_model=PlanResponse)
@@ -230,29 +290,86 @@ async def commit_plan(
             
             base_date = date.today()
 
-            # 2. Create Tasks
+            # 2. Create Milestones (if provided or inferred)
+            milestone_ids = []
+            milestone_plan_index_to_row = {}
+            milestone_plan_index_to_anchor_date = {}
+            milestone_specs = _milestone_ordered_list(plan.get("milestones", []))
+            previous_due_date = base_date
+            for order_index, (plan_idx, milestone_data, due_dt) in enumerate(milestone_specs):
+                if not isinstance(milestone_data, dict):
+                    continue
+                title = milestone_data.get("title")
+                if not title:
+                    continue
+
+                target_date = due_dt.date() if due_dt else None
+                anchor_date = previous_due_date or base_date
+                milestone_plan_index_to_anchor_date[plan_idx] = anchor_date
+
+                proposal_offset_days = None
+                if target_date:
+                    proposal_offset_days = max((target_date - anchor_date).days, 0)
+
+                milestone = Milestone(
+                    id=str(uuid.uuid4()),
+                    project_id=project.id,
+                    order_index=order_index,
+                    title=title,
+                    description=milestone_data.get("description", ""),
+                    is_critical=bool(milestone_data.get("is_critical", False)),
+                    target_date=target_date,
+                    proposal_offset_days=proposal_offset_days,
+                    status="PENDING"
+                )
+                db.add(milestone)
+                db.flush()
+                milestone_ids.append(milestone.id)
+                milestone_plan_index_to_row[plan_idx] = milestone
+
+                if target_date is not None:
+                    previous_due_date = target_date
+
+            if milestone_ids:
+                logger.debug(f"Created {len(milestone_ids)} milestones")
+
+            # 2.5 Create Tasks
             task_ids = []
             for i, task_data in enumerate(tasks_data):
+                if not isinstance(task_data, dict):
+                    continue
                 if not task_data.get("title"):
                     raise ValueError(f"Task {i} is missing title")
                 if not task_data.get("due_at") and not task_data.get("deadline"):
                     raise ValueError(f"Task {i} is missing due_at")
-                
-                # Parse due_at
-                try:
-                    due_raw = task_data.get("due_at") or task_data.get("deadline")
-                    if isinstance(due_raw, str) and due_raw.endswith("Z"):
-                        due_raw = due_raw.replace("Z", "+00:00")
-                    deadline = datetime.fromisoformat(due_raw.replace('+08:00', ''))
-                except Exception as e:
-                    raise ValueError(f"Task {i} has invalid due_at format: {str(e)}")
-                
-                proposal_offset_days = (deadline.date() - base_date).days
+
+                deadline = _parse_plan_datetime(task_data.get("due_at") or task_data.get("deadline"))
+                if deadline is None:
+                    raise ValueError(f"Task {i} has invalid due_at format")
+
+                milestone_id = None
+                proposal_offset_days = None
+                milestone_index_raw = task_data.get("milestone_index")
+                milestone_index = None
+                if milestone_index_raw is not None:
+                    try:
+                        milestone_index = int(milestone_index_raw)
+                    except Exception:
+                        milestone_index = None
+
+                if milestone_index is not None and milestone_index in milestone_plan_index_to_row:
+                    milestone_row = milestone_plan_index_to_row[milestone_index]
+                    milestone_id = milestone_row.id
+                    anchor_date = milestone_plan_index_to_anchor_date.get(milestone_index, base_date)
+                    proposal_offset_days = max((deadline.date() - anchor_date).days, 0)
+                else:
+                    proposal_offset_days = (deadline.date() - base_date).days
 
                 task = Task(
                     id=str(uuid.uuid4()),
                     user_id=current_user.id,
                     project_id=project.id,
+                    milestone_id=milestone_id,
                     title=task_data["title"],
                     description=task_data.get("description", ""),
                     deadline=deadline,
@@ -264,48 +381,8 @@ async def commit_plan(
                 db.add(task)
                 db.flush()
                 task_ids.append(task.id)
-            
+
             logger.debug(f"Created {len(task_ids)} tasks")
-
-            # 2.5 Create Milestones (if provided or inferred)
-            milestone_ids = []
-            for milestone_data in plan.get("milestones", []):
-                if not isinstance(milestone_data, dict):
-                    continue
-                title = milestone_data.get("title")
-                if not title:
-                    continue
-                due_raw = milestone_data.get("due_at") or milestone_data.get("deadline")
-                target_date = None
-                if due_raw:
-                    try:
-                        if isinstance(due_raw, str) and due_raw.endswith("Z"):
-                            due_raw = due_raw.replace("Z", "+00:00")
-                        dt = datetime.fromisoformat(due_raw.replace('+08:00', ''))
-                        target_date = dt.date()
-                    except Exception:
-                        target_date = None
-
-                proposal_offset_days = None
-                if target_date:
-                    proposal_offset_days = (target_date - base_date).days
-
-                milestone = Milestone(
-                    id=str(uuid.uuid4()),
-                    project_id=project.id,
-                    title=title,
-                    description=milestone_data.get("description", ""),
-                    is_critical=bool(milestone_data.get("is_critical", False)),
-                    target_date=target_date,
-                    proposal_offset_days=proposal_offset_days,
-                    status="PENDING"
-                )
-                db.add(milestone)
-                db.flush()
-                milestone_ids.append(milestone.id)
-
-            if milestone_ids:
-                logger.debug(f"Created {len(milestone_ids)} milestones")
 
             # 2.6 Create Long Task Templates (if provided)
             new_long_templates = []

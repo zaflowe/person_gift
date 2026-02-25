@@ -10,6 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from app.models.project_long_task import ProjectLongTaskTemplate
 from app.models.project import Project
 from app.models.task import Task
+from app.services.task_service import TaskService
 
 logger = logging.getLogger(__name__)
 
@@ -116,6 +117,7 @@ class ProjectLongTaskService:
         if today is None:
             today = datetime.now()
 
+        TaskService.cleanup_stale_recurring_instances(db, now=today)
         # Defensive cleanup for historical duplicates before daily generation.
         self.cleanup_duplicate_generated_tasks(db)
 
@@ -136,6 +138,7 @@ class ProjectLongTaskService:
         if not project or project.status != "ACTIVE":
             return 0
         today = datetime.now()
+        TaskService.cleanup_stale_recurring_instances(db, user_id=template.user_id, now=today)
         if not self._within_cycle(template, today):
             return 0
         return self._safe_create_for_date(db, template, today)
@@ -258,11 +261,8 @@ class ProjectLongTaskService:
         else:
             deadline = today.replace(hour=23, minute=59, second=59)
 
-        duration = None
-        if scheduled_time and deadline:
-            diff = (deadline - scheduled_time).total_seconds() / 60
-            if diff > 0:
-                duration = int(diff)
+        scheduled_time, deadline = TaskService._normalize_task_window(scheduled_time, deadline, now=today)
+        duration = max(int((deadline - scheduled_time).total_seconds() // 60), 1)
 
         new_task = Task(
             user_id=template.user_id,
@@ -271,9 +271,9 @@ class ProjectLongTaskService:
             status="OPEN",
             deadline=deadline,
             scheduled_time=scheduled_time,
-            scheduled_date=scheduled_time if scheduled_time else None,
+            scheduled_date=scheduled_time,
             duration=duration,
-            is_time_blocked=bool(scheduled_time),
+            is_time_blocked=True,
             evidence_type=template.evidence_type,
             evidence_criteria=template.evidence_criteria,
             long_task_template_id=template.id,

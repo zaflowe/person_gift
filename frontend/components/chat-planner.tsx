@@ -26,6 +26,7 @@ interface PlanTask {
     title: string;
     due_at: string;
     description?: string;
+    milestone_index?: number;
     [key: string]: unknown;
 }
 
@@ -33,6 +34,7 @@ interface PlanMilestone {
     title: string;
     due_at?: string;
     description?: string;
+    tasks?: PlanTask[];
     [key: string]: unknown;
 }
 
@@ -121,13 +123,31 @@ export default function ChatPlanner({ embedded = false, className }: { embedded?
                 due_at: m?.due_at || m?.deadline || "",
             }))
             : [];
+        const nestedMilestoneTasks = safeMilestones.flatMap((m: any, idx: number) =>
+            Array.isArray(m?.tasks)
+                ? m.tasks.map((t: any) => ({
+                    ...t,
+                    due_at: t?.due_at || t?.deadline || "",
+                    milestone_index: typeof t?.milestone_index === "number" ? t.milestone_index : idx,
+                }))
+                : []
+        );
         const safeLongTasks = Array.isArray((rawPlan as any).long_tasks) ? (rawPlan as any).long_tasks : [];
+        const mergedTasks = [...safeTasks];
+        const seen = new Set(mergedTasks.map((t: any) => `${t.title || ""}__${t.due_at || ""}__${t.milestone_index ?? ""}`));
+        for (const t of nestedMilestoneTasks) {
+            const key = `${t.title || ""}__${t.due_at || ""}__${t.milestone_index ?? ""}`;
+            if (!seen.has(key)) {
+                mergedTasks.push(t);
+                seen.add(key);
+            }
+        }
         return {
             ...session,
             plan: {
                 ...(rawPlan as any),
                 project: safeProject,
-                tasks: safeTasks,
+                tasks: mergedTasks,
                 milestones: safeMilestones,
                 long_tasks: safeLongTasks,
             },
@@ -350,7 +370,7 @@ export default function ChatPlanner({ embedded = false, className }: { embedded?
         });
     };
 
-    const handleUpdatePlanTask = (index: number, field: string, value: string) => {
+    const handleUpdatePlanTask = (index: number, field: string, value: string | number) => {
         if (!currentPlan) return;
         const existingPlan = currentPlan.plan || { project: { title: "", description: "" }, tasks: [] as PlanTask[] };
         const existingTasks = Array.isArray(existingPlan.tasks) ? existingPlan.tasks : [];
@@ -720,6 +740,20 @@ export default function ChatPlanner({ embedded = false, className }: { embedded?
                                                         />
                                                     </div>
                                                     <div className="flex items-center gap-2 pl-6">
+                                                        {safeMilestones.length > 0 && (
+                                                            <select
+                                                                value={typeof task.milestone_index === "number" ? String(task.milestone_index) : ""}
+                                                                onChange={(e) => handleUpdatePlanTask(idx, "milestone_index", e.target.value === "" ? "" : Number(e.target.value))}
+                                                                className="text-[10px] bg-[var(--surface)] border border-[var(--border)] rounded px-1.5 py-0.5 text-[var(--muted)] focus:text-[var(--text)] outline-none"
+                                                            >
+                                                                <option value="">未归属</option>
+                                                                {safeMilestones.map((m, mIdx) => (
+                                                                    <option key={mIdx} value={mIdx}>
+                                                                        里程碑 {mIdx + 1}
+                                                                    </option>
+                                                                ))}
+                                                            </select>
+                                                        )}
                                                         <input
                                                             type="datetime-local"
                                                             value={task.due_at ? new Date(task.due_at).toISOString().slice(0, 16) : ""}

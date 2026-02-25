@@ -1,13 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { X } from "lucide-react";
-import { Task } from "@/types";
+import useSWR from "swr";
+import { fetcher } from "@/lib/utils";
+import { Milestone, Task } from "@/types";
 
 interface EditTaskModalProps {
     task: Task;
     onClose: () => void;
     onSave: (taskId: string, payload: any) => Promise<void>;
+    milestones?: Milestone[];
 }
 
 function toLocalInput(value?: string | null) {
@@ -17,7 +20,7 @@ function toLocalInput(value?: string | null) {
     return local.toISOString().slice(0, 16);
 }
 
-export function EditTaskModal({ task, onClose, onSave }: EditTaskModalProps) {
+export function EditTaskModal({ task, onClose, onSave, milestones }: EditTaskModalProps) {
     const [loading, setLoading] = useState(false);
     const [form, setForm] = useState({
         title: task.title || "",
@@ -26,7 +29,16 @@ export function EditTaskModal({ task, onClose, onSave }: EditTaskModalProps) {
         scheduled_time: toLocalInput(task.scheduled_time as any),
         evidence_type: task.evidence_type || "none",
         evidence_criteria: task.evidence_criteria || "",
+        milestone_id: task.milestone_id || "",
     });
+    const { data: fetchedMilestones } = useSWR<Milestone[]>(
+        !milestones && task.project_id ? `/api/projects/${task.project_id}/milestones` : null,
+        fetcher
+    );
+    const availableMilestones = useMemo(
+        () => (milestones || fetchedMilestones || []).slice().sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0)),
+        [milestones, fetchedMilestones]
+    );
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -39,6 +51,7 @@ export function EditTaskModal({ task, onClose, onSave }: EditTaskModalProps) {
                 scheduled_time: form.scheduled_time ? new Date(form.scheduled_time).toISOString() : null,
                 evidence_type: form.evidence_type,
                 evidence_criteria: form.evidence_type === "none" ? null : form.evidence_criteria,
+                milestone_id: task.project_id ? (form.milestone_id || null) : null,
             });
         } finally {
             setLoading(false);
@@ -96,6 +109,24 @@ export function EditTaskModal({ task, onClose, onSave }: EditTaskModalProps) {
                             />
                         </div>
                     </div>
+
+                    {task.project_id && (
+                        <div>
+                            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">所属里程碑 (可选)</label>
+                            <select
+                                value={form.milestone_id}
+                                onChange={e => setForm({ ...form, milestone_id: e.target.value })}
+                                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none transition-colors appearance-none"
+                            >
+                                <option value="">无（放在相关任务）</option>
+                                {availableMilestones.map((m) => (
+                                    <option key={m.id} value={m.id}>
+                                        里程碑 {(m.order_index ?? 0) + 1} · {m.title}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
 
                     <div>
                         <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">验收方式</label>

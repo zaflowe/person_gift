@@ -1,20 +1,29 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { apiPost, fetcher } from "@/lib/utils";
 import { X } from "lucide-react";
 import { mutate } from "swr";
 import useSWR from "swr";
-import { Project } from "@/types";
+import { Milestone, Project } from "@/types";
 
 interface CreateTaskModalProps {
     isOpen: boolean;
     onClose: () => void;
     onSuccess?: () => void;
     defaultProjectId?: string;
+    defaultMilestoneId?: string | null;
+    milestones?: Milestone[];
 }
 
-export function CreateTaskModal({ isOpen, onClose, onSuccess, defaultProjectId }: CreateTaskModalProps) {
+export function CreateTaskModal({
+    isOpen,
+    onClose,
+    onSuccess,
+    defaultProjectId,
+    defaultMilestoneId = null,
+    milestones,
+}: CreateTaskModalProps) {
     const [loading, setLoading] = useState(false);
     const [formData, setFormData] = useState({
         title: "",
@@ -23,18 +32,30 @@ export function CreateTaskModal({ isOpen, onClose, onSuccess, defaultProjectId }
         scheduled_time: "",
         evidence_type: "none",
         evidence_criteria: "",
-        project_id: defaultProjectId || ""
+        project_id: defaultProjectId || "",
+        milestone_id: defaultMilestoneId || "",
     });
 
-    // Reset/Update project_id when opening or default changes
-    useState(() => {
-        if (isOpen && defaultProjectId) {
-            setFormData(prev => ({ ...prev, project_id: defaultProjectId }));
-        }
-    });
+    useEffect(() => {
+        if (!isOpen) return;
+        setFormData(prev => ({
+            ...prev,
+            project_id: defaultProjectId || prev.project_id || "",
+            milestone_id: defaultMilestoneId || "",
+        }));
+    }, [isOpen, defaultProjectId, defaultMilestoneId]);
 
     // Fetch projects for selection
     const { data: projects } = useSWR<Project[]>("/api/projects", fetcher);
+    const selectedProjectId = formData.project_id || defaultProjectId || "";
+    const { data: fetchedMilestones } = useSWR<Milestone[]>(
+        !milestones && selectedProjectId ? `/api/projects/${selectedProjectId}/milestones` : null,
+        fetcher
+    );
+    const availableMilestones = useMemo(
+        () => (milestones || fetchedMilestones || []).slice().sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0)),
+        [milestones, fetchedMilestones]
+    );
 
     // Auto-parse tags from description
     const tags = formData.description.match(/#[\w\u4e00-\u9fa5]+/g) || [];
@@ -57,7 +78,8 @@ export function CreateTaskModal({ isOpen, onClose, onSuccess, defaultProjectId }
                 scheduled_time: formData.scheduled_time ? new Date(formData.scheduled_time).toISOString() : null,
                 evidence_type: formData.evidence_type,
                 evidence_criteria: formData.evidence_criteria,
-                project_id: formData.project_id || null
+                project_id: formData.project_id || null,
+                milestone_id: formData.milestone_id || null,
             };
 
             await apiPost("/api/tasks", payload);
@@ -72,7 +94,8 @@ export function CreateTaskModal({ isOpen, onClose, onSuccess, defaultProjectId }
                 scheduled_time: "",
                 evidence_type: "none",
                 evidence_criteria: "",
-                project_id: defaultProjectId || ""
+                project_id: defaultProjectId || "",
+                milestone_id: defaultMilestoneId || "",
             });
         } catch (err: any) {
             alert(err.message || "创建失败");
@@ -168,7 +191,7 @@ export function CreateTaskModal({ isOpen, onClose, onSuccess, defaultProjectId }
                         <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">所属项目 (可选)</label>
                         <select
                             value={formData.project_id}
-                            onChange={e => setFormData({ ...formData, project_id: e.target.value })}
+                            onChange={e => setFormData({ ...formData, project_id: e.target.value, milestone_id: "" })}
                             className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none transition-colors appearance-none"
                         >
                             <option value="">📁 无项目</option>
@@ -177,6 +200,24 @@ export function CreateTaskModal({ isOpen, onClose, onSuccess, defaultProjectId }
                             ))}
                         </select>
                     </div>
+
+                    {formData.project_id && (
+                        <div>
+                            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">所属里程碑 (可选)</label>
+                            <select
+                                value={formData.milestone_id}
+                                onChange={e => setFormData({ ...formData, milestone_id: e.target.value })}
+                                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none transition-colors appearance-none"
+                            >
+                                <option value="">无（放在相关任务）</option>
+                                {availableMilestones.map((m) => (
+                                    <option key={m.id} value={m.id}>
+                                        里程碑 {(m.order_index ?? 0) + 1} · {m.title}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
 
                     {/* Evidence Type */}
                     <div>

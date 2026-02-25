@@ -167,7 +167,12 @@ class ExemptionService:
         quota.rule_break_used += 1
         task.status = "EXCUSED"
         task.completed_at = datetime.utcnow()
-        
+        try:
+            from app.services.task_service import TaskService
+            TaskService._sync_project_milestone_status_from_task(db, task)
+        except Exception:
+            logger.exception("Failed to sync project milestone status after rule break")
+
         # Log the usage
         log = ExemptionLog(
             quota_id=quota.id,

@@ -10,6 +10,8 @@ from app.database import get_db
 from app.models.user import User
 from app.dependencies import get_current_user
 from app.models.habit import HabitTemplate, FixedBlock
+from app.models.project import Project
+from app.models.project_long_task import ProjectLongTaskTemplate
 from app.services.habit_service import habit_service
 from pydantic import BaseModel
 
@@ -119,7 +121,7 @@ def get_fixed_blocks(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Get all fixed blocks."""
+    """Get all fixed blocks plus active-project long-task schedule projections."""
     blocks = db.query(FixedBlock).filter(FixedBlock.user_id == current_user.id).all()
     # Parse json days
     result = []
@@ -132,7 +134,50 @@ def get_fixed_blocks(
                  b_dict['days_of_week'] = []
         if '_sa_instance_state' in b_dict:
             del b_dict['_sa_instance_state']
+        b_dict["source_type"] = "fixed_block"
+        b_dict["readonly"] = False
         result.append(b_dict)
+
+    projected_long_tasks = db.query(ProjectLongTaskTemplate, Project).join(
+        Project, Project.id == ProjectLongTaskTemplate.project_id
+    ).filter(
+        ProjectLongTaskTemplate.user_id == current_user.id,
+        Project.status == "ACTIVE",
+        ProjectLongTaskTemplate.is_hidden == False,
+    ).all()
+
+    for template, project in projected_long_tasks:
+        # Only show templates that have a visible time window for the fixed-time panel.
+        start_time = template.default_start_time
+        end_time = template.default_end_time or template.default_due_time
+        if not start_time or not end_time:
+            continue
+        try:
+            days = json.loads(template.days_of_week) if template.days_of_week else []
+        except Exception:
+            days = []
+        if template.frequency_mode == "interval" and not days:
+            # Fixed-time panel expects weekday display. Daily interval -> all days.
+            if (template.interval_days or 1) == 1:
+                days = [0, 1, 2, 3, 4, 5, 6]
+
+        result.append({
+            "id": f"project_long_task:{template.id}",
+            "title": template.title,
+            "start_time": start_time,
+            "end_time": end_time,
+            "days_of_week": days,
+            "color": None,
+            "source_type": "project_long_task",
+            "readonly": True,
+            "project_id": project.id,
+            "project_title": project.title,
+            "template_id": template.id,
+            "frequency_mode": template.frequency_mode,
+            "interval_days": template.interval_days,
+        })
+
+    result.sort(key=lambda item: (item.get("start_time") or "99:99", item.get("title") or ""))
     return result
 
 @router.post("/fixed-blocks")

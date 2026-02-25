@@ -1,15 +1,16 @@
 """Service for managing habit templates and daily generation logic."""
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import List, Optional
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
-from sqlalchemy import and_
 
 from app.models.habit import HabitTemplate
 from app.models.task import Task
 from app.models.user import User
+from app.services.task_service import TaskService
 
 logger = logging.getLogger(__name__)
 
@@ -18,11 +19,9 @@ class HabitService:
     """Service for habit generation."""
 
     def get_habits(self, db: Session, user_id: str) -> List[HabitTemplate]:
-        """Get all habit templates for a user."""
         return db.query(HabitTemplate).filter(HabitTemplate.user_id == user_id).all()
 
     def create_habit(self, db: Session, habit_data: dict, user_id: str) -> HabitTemplate:
-        """Create a new habit template."""
         habit = HabitTemplate(
             user_id=user_id,
             title=habit_data["title"],
@@ -35,47 +34,70 @@ class HabitService:
             default_end_time=habit_data.get("default_end_time"),
             evidence_type=habit_data.get("evidence_type", "none"),
             evidence_schema=habit_data.get("evidence_schema"),
-            evidence_criteria=habit_data.get("evidence_criteria")
+            evidence_criteria=habit_data.get("evidence_criteria"),
         )
         db.add(habit)
         db.commit()
         db.refresh(habit)
         return habit
-        
+
     def update_habit(self, db: Session, habit_id: str, updates: dict, user_id: str) -> Optional[HabitTemplate]:
-        """Update a habit template."""
         habit = db.query(HabitTemplate).filter(
-            HabitTemplate.id == habit_id, 
-            HabitTemplate.user_id == user_id
+            HabitTemplate.id == habit_id,
+            HabitTemplate.user_id == user_id,
         ).first()
-        
         if not habit:
             return None
-            
+
         for key, value in updates.items():
             if key == "days_of_week" and isinstance(value, list):
                 setattr(habit, key, json.dumps(value))
             else:
                 setattr(habit, key, value)
-                
+
         habit.updated_at = datetime.utcnow()
         db.commit()
         db.refresh(habit)
         return habit
-        
+
     def delete_habit(self, db: Session, habit_id: str, user_id: str) -> bool:
-        """Delete a habit template."""
         habit = db.query(HabitTemplate).filter(
-            HabitTemplate.id == habit_id, 
-            HabitTemplate.user_id == user_id
+            HabitTemplate.id == habit_id,
+            HabitTemplate.user_id == user_id,
         ).first()
-        
         if not habit:
             return False
-            
+
         db.delete(habit)
         db.commit()
         return True
+
+    def cleanup_duplicate_generated_tasks(self, db: Session, user_id: Optional[str] = None) -> int:
+        """Keep only one habit-generated task per (template_id, generated_for_date)."""
+        query = db.query(Task).filter(
+            Task.template_id.isnot(None),
+            Task.generated_for_date.isnot(None),
+        ).order_by(Task.template_id.asc(), Task.generated_for_date.asc(), Task.created_at.asc(), Task.id.asc())
+        if user_id:
+            query = query.filter(Task.user_id == user_id)
+
+        seen = set()
+        to_delete: list[Task] = []
+        for task in query.all():
+            key = (task.template_id, task.generated_for_date)
+            if key in seen:
+                to_delete.append(task)
+            else:
+                seen.add(key)
+
+        if not to_delete:
+            return 0
+
+        for task in to_delete:
+            db.delete(task)
+        db.commit()
+        logger.warning("Deduplicated %s duplicate habit-generated tasks", len(to_delete))
+        return len(to_delete)
 
     def process_daily_habits(self, db: Session, user_id: str, today: datetime = None) -> int:
         """
@@ -84,130 +106,118 @@ class HabitService:
         """
         if today is None:
             today = datetime.now()
-            
-        today_date = today.date()
-        date_str = today.strftime("%Y-%m-%d")
-        
-        # 1. Update User's check date first (to avoid spam if we want strict once-per-tick, 
-        # but here we rely on task uniqueness per template+date, so multiple calls are safe)
+
         user = db.query(User).filter(User.id == user_id).first()
         if not user:
             return 0
-            
-        # Optional: Skip if already checked today? 
-        # User requested: "If last_habit_generation_date != today -> execute"
-        # We can adhere to that, OR we can just run the logic safely (idempotent).
-        # Running safely allows adding new habits midday and taking effect.
-        # But let's stick to the prompt's request for "Daily Login Trigger".
-        # We will update the date AT THE END.
-        
-        # 2. Get active habits
+
+        # Cleanup unfinished recurring instances from previous days and historical duplicates.
+        TaskService.cleanup_stale_recurring_instances(db, user_id=user_id, now=today)
+        self.cleanup_duplicate_generated_tasks(db, user_id=user_id)
+
+        today_date = today.date()
         habits = db.query(HabitTemplate).filter(
             HabitTemplate.user_id == user_id,
-            HabitTemplate.enabled == True
+            HabitTemplate.enabled == True,
         ).all()
-        
+
         created_count = 0
-        
         for habit in habits:
             should_create = False
-            
-            # Logic: Interval vs Specific Days
+
             if habit.frequency_mode == "specific_days":
-                # Check weekday (Monday=0, Sunday=6)
                 target_days = json.loads(habit.days_of_week) if habit.days_of_week else []
-                if today.weekday() in target_days:
-                    should_create = True
-            
+                should_create = today.weekday() in target_days
             elif habit.frequency_mode == "interval":
-                # Check interval
-                # If interval=1 (Daily), always true
                 if habit.interval_days <= 1:
                     should_create = True
                 else:
-                    # Check the LAST generated task for this template
                     last_task = db.query(Task).filter(
                         Task.template_id == habit.id
                     ).order_by(Task.generated_for_date.desc()).first()
-                    
-                    if not last_task:
+                    if not last_task or not last_task.generated_for_date:
                         should_create = True
                     else:
-                        if last_task.generated_for_date:
-                            days_diff = (today_date - last_task.generated_for_date.date()).days
-                            if days_diff >= habit.interval_days:
-                                should_create = True
-                        else:
-                            # Fallback if legacy somehow
-                            should_create = True
-            
-            if should_create:
-                # 3. Uniqueness Check (Idempotency)
-                # Check if task already exists for this template AND this date
-                # We need to query purely based on template_id and generated_for_date
-                # We assume generated_for_date stores date part or start of day
-                start_of_day = datetime(today.year, today.month, today.day)
-                
-                existing = db.query(Task).filter(
-                    Task.template_id == habit.id,
-                    Task.generated_for_date == start_of_day
-                ).first()
-                
-                if not existing:
-                    # Create Task
-                    # Calculate Deadline
-                    # Calculate Times
-                    scheduled_time = None
-                    deadline = None
-                    
-                    # 1. Start Time
-                    if habit.default_start_time:
-                        try:
-                            h, m = map(int, habit.default_start_time.split(":"))
-                            scheduled_time = today.replace(hour=h, minute=m, second=0, microsecond=0)
-                        except:
-                            pass
-                            
-                    # 2. End Time (Deadline)
-                    # Priority: default_end_time > default_due_time
-                    end_str = habit.default_end_time or habit.default_due_time
-                    if end_str:
-                         try:
-                            h, m = map(int, end_str.split(":"))
-                            deadline = today.replace(hour=h, minute=m, second=0, microsecond=0)
-                         except:
-                            deadline = today.replace(hour=23, minute=59)
-                    else:
-                        deadline = today.replace(hour=23, minute=59, second=59)
+                        days_diff = (today_date - last_task.generated_for_date.date()).days
+                        should_create = days_diff >= habit.interval_days
 
-                    # Calculate duration if both exist
-                    duration = None
-                    if scheduled_time and deadline:
-                        diff = (deadline - scheduled_time).total_seconds() / 60
-                        if diff > 0:
-                            duration = int(diff)
+            if not should_create:
+                continue
 
-                    new_task = Task(
-                        user_id=user_id,
-                        title=habit.title,
-                        status="OPEN",
-                        deadline=deadline,
-                        scheduled_time=scheduled_time,
-                        duration=duration,
-                        is_time_blocked=bool(scheduled_time),
-                        evidence_type=habit.evidence_type,
-                        evidence_criteria=habit.evidence_criteria,
-                        template_id=habit.id,
-                        generated_for_date=start_of_day,
-                        tags=json.dumps(["习惯"]) # Tag as Habit
-                    )
-                    db.add(new_task)
-                    created_count += 1
+            created_count += self._safe_create_for_date(db, habit, user_id, today)
 
-        # 4. Update User's last check time
         user.last_habit_generation_date = datetime.utcnow()
         db.commit()
-        
         return created_count
+
+    def _safe_create_for_date(self, db: Session, habit: HabitTemplate, user_id: str, today: datetime) -> int:
+        start_of_day = datetime(today.year, today.month, today.day)
+
+        existing = db.query(Task).filter(
+            Task.template_id == habit.id,
+            Task.generated_for_date == start_of_day,
+        ).first()
+        if existing:
+            return 0
+
+        try:
+            self._create_task_for_date(db, habit, user_id, today, start_of_day)
+            db.commit()
+            return 1
+        except IntegrityError:
+            db.rollback()
+            logger.info(
+                "Skipped duplicate habit generation for template=%s date=%s due to integrity constraint",
+                habit.id,
+                today.date().isoformat(),
+            )
+            self.cleanup_duplicate_generated_tasks(db, user_id=user_id)
+            return 0
+
+    def _create_task_for_date(
+        self,
+        db: Session,
+        habit: HabitTemplate,
+        user_id: str,
+        today: datetime,
+        start_of_day: datetime,
+    ) -> None:
+        scheduled_time = None
+        deadline = None
+
+        if habit.default_start_time:
+            try:
+                h, m = map(int, habit.default_start_time.split(":"))
+                scheduled_time = today.replace(hour=h, minute=m, second=0, microsecond=0)
+            except Exception:
+                scheduled_time = None
+
+        end_str = habit.default_end_time or habit.default_due_time
+        if end_str:
+            try:
+                h, m = map(int, end_str.split(":"))
+                deadline = today.replace(hour=h, minute=m, second=0, microsecond=0)
+            except Exception:
+                deadline = None
+
+        scheduled_time, deadline = TaskService._normalize_task_window(scheduled_time, deadline, now=today)
+        duration = max(int((deadline - scheduled_time).total_seconds() // 60), 1)
+
+        db.add(Task(
+            user_id=user_id,
+            title=habit.title,
+            status="OPEN",
+            deadline=deadline,
+            scheduled_time=scheduled_time,
+            scheduled_date=scheduled_time,
+            duration=duration,
+            is_time_blocked=True,
+            evidence_type=habit.evidence_type,
+            evidence_criteria=habit.evidence_criteria,
+            template_id=habit.id,
+            generated_for_date=start_of_day,
+            tags=json.dumps(["习惯"], ensure_ascii=False),
+        ))
+
 
 habit_service = HabitService()

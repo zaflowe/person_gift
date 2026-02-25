@@ -30,13 +30,18 @@ class Task(Base):
     is_time_blocked = Column(Boolean, default=False, nullable=False)  # Has time been allocated
     
     project_id = Column(String, ForeignKey("projects.id"), nullable=True)
+    milestone_id = Column(String, ForeignKey("milestones.id"), nullable=True)
     plan_template_id = Column(String, ForeignKey("plan_templates.id"), nullable=True)
     long_task_template_id = Column(String, ForeignKey("project_long_task_templates.id"), nullable=True)
     
     # Habit fields
     template_id = Column(String, ForeignKey("habit_templates.id"), nullable=True)
     generated_for_date = Column(DateTime, nullable=True) # Which date (YYYY-MM-DD) this was generated for
-    
+
+    # Task board queue state (display lane control, separate from planned time)
+    board_lane = Column(String, nullable=True)  # IN_PROGRESS / TODO / None(auto)
+    board_lane_updated_at = Column(DateTime, nullable=True)
+
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     completed_at = Column(DateTime, nullable=True)
@@ -44,6 +49,7 @@ class Task(Base):
     # Relationships
     user = relationship("User", back_populates="tasks")
     project = relationship("Project", back_populates="tasks")
+    milestone = relationship("Milestone", back_populates="tasks")
     plan_template = relationship("PlanTemplate", back_populates="tasks")
     habit_template = relationship("HabitTemplate", back_populates="tasks")
     long_task_template = relationship("ProjectLongTaskTemplate", back_populates="tasks")

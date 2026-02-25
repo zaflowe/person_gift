@@ -8,7 +8,7 @@ import { Project, Milestone, Task } from "@/types";
 import { ArrowLeft, CheckCircle, Flag, Lock, Play, Target, ListTodo, Edit2, Trash2, Plus, Calendar } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import useSWR, { mutate } from "swr";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useToast } from "@/components/ui/toast";
@@ -32,6 +32,44 @@ interface MilestoneFormProps {
     onSave: (data: MilestoneInput) => Promise<void>;
     onCancel: () => void;
     isProcessing: boolean;
+}
+
+type Rgb = { r: number; g: number; b: number };
+
+function hexToRgb(hex?: string | null): Rgb {
+    const normalized = (hex || "#3b82f6").replace("#", "").trim();
+    const full = normalized.length === 3
+        ? normalized.split("").map((c) => c + c).join("")
+        : normalized.padEnd(6, "0").slice(0, 6);
+    const num = Number.parseInt(full, 16);
+    if (Number.isNaN(num)) return { r: 59, g: 130, b: 246 };
+    return { r: (num >> 16) & 255, g: (num >> 8) & 255, b: num & 255 };
+}
+
+function rgbToHex({ r, g, b }: Rgb): string {
+    return `#${[r, g, b].map((v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, "0")).join("")}`;
+}
+
+function mix(colorA: string, colorB: string, ratio: number): string {
+    const a = hexToRgb(colorA);
+    const b = hexToRgb(colorB);
+    const t = Math.max(0, Math.min(1, ratio));
+    return rgbToHex({
+        r: a.r + (b.r - a.r) * t,
+        g: a.g + (b.g - a.g) * t,
+        b: a.b + (b.b - a.b) * t,
+    });
+}
+
+function alpha(hex: string, opacity: number): string {
+    const { r, g, b } = hexToRgb(hex);
+    const a = Math.max(0, Math.min(1, opacity));
+    return `rgba(${r}, ${g}, ${b}, ${a})`;
+}
+
+function milestoneThemeColor(baseColor: string, index: number): string {
+    const paletteTargets = ["#3b82f6", "#6366f1", "#8b5cf6", "#0ea5e9", "#14b8a6", "#f59e0b"];
+    return mix(baseColor, paletteTargets[index % paletteTargets.length], 0.45);
 }
 
 export default function ProjectDetailPage() {
@@ -68,6 +106,7 @@ function ProjectDetailContent() {
     const [editingMilestoneId, setEditingMilestoneId] = useState<string | null>(null);
     const [editingTask, setEditingTask] = useState<Task | null>(null);
     const [editingLongTask, setEditingLongTask] = useState<ProjectLongTaskTemplate | null>(null);
+    const [createTaskMilestoneId, setCreateTaskMilestoneId] = useState<string | null>(null);
     const [milestoneSort, setMilestoneSort] = useState<'asc' | 'desc'>('asc'); // Not used yet but requested
     const [showColorPicker, setShowColorPicker] = useState(false);
     const [editForm, setEditForm] = useState({
@@ -75,6 +114,105 @@ function ProjectDetailContent() {
         success_criteria: "",
         failure_criteria: ""
     });
+    const terminalTaskStatuses = new Set(["DONE", "EXCUSED"]);
+    const allMilestonesAchieved = milestones && milestones.length > 0 && milestones.every(m => m.status === "ACHIEVED");
+    const milestoneTasksById = (tasks || []).reduce<Record<string, Task[]>>((acc, task) => {
+        if (!task.milestone_id) return acc;
+        (acc[task.milestone_id] ||= []).push(task);
+        return acc;
+    }, {});
+
+    const orderedMilestones = useMemo(
+        () => (milestones || []).slice().sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0)),
+        [milestones]
+    );
+    const milestoneLookup = useMemo(
+        () => Object.fromEntries((orderedMilestones || []).map(m => [m.id, m])),
+        [orderedMilestones]
+    );
+    const allProjectTasks = useMemo(
+        () => (tasks || []).slice().sort((a, b) => {
+            const aDeadline = a.deadline ? new Date(a.deadline).getTime() : Number.MAX_SAFE_INTEGER;
+            const bDeadline = b.deadline ? new Date(b.deadline).getTime() : Number.MAX_SAFE_INTEGER;
+            return aDeadline - bDeadline;
+        }),
+        [tasks]
+    );
+
+    const currentUnlockedMilestone = orderedMilestones.find(m => m.is_unlocked && m.status !== "ACHIEVED") || null;
+    const projectTaskTotal = allProjectTasks.length;
+    const projectTaskDone = allProjectTasks.filter(t => terminalTaskStatuses.has(t.status)).length;
+    const projectTaskUnlocked = allProjectTasks.filter(t => t.status !== "LOCKED").length;
+    const projectMilestoneTotal = orderedMilestones.length;
+    const projectMilestoneDone = orderedMilestones.filter(m => m.status === "ACHIEVED").length;
+    const projectProgressPercent = projectTaskTotal > 0 ? Math.round((projectTaskDone / projectTaskTotal) * 100) : 0;
+    const baseProjectColor = (project?.color && /^#?[0-9a-fA-F]{3,8}$/.test(project.color))
+        ? (project.color.startsWith("#") ? project.color : `#${project.color}`)
+        : "#3b82f6";
+    const themeVars = {
+        ["--project-primary" as any]: baseProjectColor,
+        ["--project-primary-12" as any]: alpha(baseProjectColor, 0.12),
+        ["--project-primary-20" as any]: alpha(baseProjectColor, 0.2),
+        ["--project-primary-30" as any]: alpha(baseProjectColor, 0.3),
+        ["--project-primary-40" as any]: alpha(baseProjectColor, 0.4),
+        ["--project-primary-60" as any]: alpha(baseProjectColor, 0.6),
+        ["--project-primary-gradient-start" as any]: mix(baseProjectColor, "#ffffff", 0.08),
+        ["--project-primary-gradient-end" as any]: mix(baseProjectColor, "#111827", 0.06),
+    } as React.CSSProperties;
+
+    const getMilestoneTasks = (milestoneId: string) =>
+        (milestoneTasksById[milestoneId] || []).slice().sort((a, b) => {
+            const aDeadline = a.deadline ? new Date(a.deadline).getTime() : Number.MAX_SAFE_INTEGER;
+            const bDeadline = b.deadline ? new Date(b.deadline).getTime() : Number.MAX_SAFE_INTEGER;
+            return aDeadline - bDeadline;
+        });
+
+    const getMilestoneMetrics = (milestoneId: string) => {
+        const list = getMilestoneTasks(milestoneId);
+        const total = list.length;
+        const done = list.filter(t => terminalTaskStatuses.has(t.status)).length;
+        const percent = total > 0 ? Math.round((done / total) * 100) : 0;
+        return { list, total, done, percent };
+    };
+    const isTaskEffectivelyLocked = (task: Task) => {
+        if (terminalTaskStatuses.has(task.status)) return false;
+        if (task.status === "LOCKED") return true;
+        if (!task.milestone_id) return false;
+        return milestoneLookup[task.milestone_id]?.is_unlocked === false;
+    };
+    const shouldHideTaskSchedule = (task: Task) => isTaskEffectivelyLocked(task);
+    const getTaskVisualStatus = (task: Task) => (isTaskEffectivelyLocked(task) ? "LOCKED" : task.status);
+    const getMilestoneVisual = (milestone: Milestone, index: number) => {
+        const isLocked = milestone.is_unlocked === false;
+        const isDone = milestone.status === "ACHIEVED";
+        const isCurrent = currentUnlockedMilestone?.id === milestone.id && !isDone;
+        const accent = isLocked ? "#9CA3AF" : milestoneThemeColor(baseProjectColor, index);
+        return {
+            isLocked,
+            isDone,
+            isCurrent,
+            accent,
+            cardStyle: isLocked
+                ? {
+                    backgroundColor: "#F8FAFC",
+                    borderColor: "#E5E7EB",
+                    borderStyle: "dashed" as const,
+                }
+                : isDone
+                    ? {
+                        backgroundColor: alpha(accent, 0.07),
+                        borderColor: alpha(accent, 0.26),
+                        boxShadow: `0 10px 28px ${alpha(accent, 0.10)}`,
+                    }
+                    : {
+                        backgroundColor: "#FFFFFF",
+                        borderColor: milestone.is_unlocked ? alpha(accent, 0.35) : "#E5E7EB",
+                        boxShadow: milestone.is_unlocked
+                            ? `${isCurrent ? `0 0 0 1px ${alpha(accent, 0.35)}, ` : ""}0 12px 34px ${alpha(accent, isCurrent ? 0.16 : 0.10)}`
+                            : "0 2px 10px rgba(15,23,42,0.04)",
+                    },
+        };
+    };
 
     if (error) return <div className="p-6 text-red-500">Loading failed</div>;
     if (!project) return <div className="p-6">Loading...</div>;
@@ -223,10 +361,30 @@ function ProjectDetailContent() {
         }
     };
 
-    const allMilestonesAchieved = milestones && milestones.length > 0 && milestones.every(m => m.status === "ACHIEVED");
-
     return (
-        <div className="max-w-4xl mx-auto p-6 space-y-6">
+        <div
+            className="max-w-4xl mx-auto p-6 space-y-6 bg-[var(--project-page-bg,#F8FAFC)]"
+            style={{ ...themeVars, ["--project-page-bg" as any]: "#F8FAFC" }}
+        >
+            <style jsx>{`
+                .project-progress-fill,
+                .milestone-progress-fill {
+                    transition: width 0.4s ease;
+                }
+                .milestone-card-hover {
+                    transition: transform 0.2s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+                }
+                .milestone-card-hover:hover {
+                    transform: translateY(-2px);
+                }
+                .milestone-current-glow {
+                    animation: projectCardPulse 2.4s ease-in-out infinite;
+                }
+                @keyframes projectCardPulse {
+                    0%, 100% { box-shadow: inherit; }
+                    50% { box-shadow: 0 0 0 1px rgba(255,255,255,0.35), 0 14px 32px rgba(15,23,42,0.1); }
+                }
+            `}</style>
             {/* Header */}
             <div className="flex items-center gap-4">
                 <Link href="/projects" className="p-2 hover:bg-muted rounded-full">
@@ -303,6 +461,73 @@ function ProjectDetailContent() {
                     </div>
 
                     <StatusBadge status={project.status} type="project" className="text-lg px-3 py-1" />
+                </div>
+            </div>
+
+            {/* Project Progress (Lightweight) */}
+            <div
+                className="rounded-2xl border p-4 md:p-5"
+                style={{
+                    background: `linear-gradient(180deg, ${alpha(baseProjectColor, 0.10)} 0%, rgba(255,255,255,0.96) 100%)`,
+                    borderColor: alpha(baseProjectColor, 0.20),
+                    boxShadow: `0 8px 24px ${alpha(baseProjectColor, 0.08)}`,
+                }}
+            >
+                <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
+                    <div className="text-sm font-medium text-slate-800">
+                        项目进度 <span className="font-bold">{projectProgressPercent}%</span>
+                    </div>
+                    <div className="flex flex-wrap gap-2 text-xs">
+                        <span
+                            className="px-2.5 py-1 rounded-full border text-slate-700"
+                            style={{ backgroundColor: alpha(baseProjectColor, 0.10), borderColor: alpha(baseProjectColor, 0.20) }}
+                        >
+                            里程碑 {projectMilestoneDone}/{projectMilestoneTotal || 0}
+                        </span>
+                        <span
+                            className="px-2.5 py-1 rounded-full border text-slate-700"
+                            style={{ backgroundColor: alpha(baseProjectColor, 0.08), borderColor: alpha(baseProjectColor, 0.18) }}
+                        >
+                            任务 {projectTaskDone}/{projectTaskTotal || 0}
+                        </span>
+                        <span className="px-2.5 py-1 rounded-full border bg-white/80 text-slate-600 border-slate-200">
+                            已解锁 {projectTaskUnlocked}/{projectTaskTotal || 0}
+                        </span>
+                    </div>
+                </div>
+                <div className="relative h-3 rounded-full overflow-hidden bg-slate-200/80">
+                    <div
+                        className="project-progress-fill h-full rounded-full"
+                        style={{
+                            width: `${Math.max(0, Math.min(projectProgressPercent, 100))}%`,
+                            background: project.status === "SUCCESS"
+                                ? "linear-gradient(90deg, #22c55e 0%, #16a34a 100%)"
+                                : `linear-gradient(90deg, ${mix(baseProjectColor, "#ffffff", 0.05)} 0%, ${mix(baseProjectColor, "#111827", 0.08)} 100%)`,
+                            boxShadow: projectProgressPercent > 0 ? `0 0 0 1px ${alpha(baseProjectColor, 0.18)} inset` : undefined,
+                        }}
+                    />
+                    {projectProgressPercent > 0 && (
+                        <div
+                            className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full border border-white"
+                            style={{
+                                left: `calc(${Math.max(0, Math.min(projectProgressPercent, 100))}% - 6px)`,
+                                backgroundColor: project.status === "SUCCESS" ? "#16a34a" : baseProjectColor,
+                                boxShadow: `0 2px 8px ${alpha(project.status === "SUCCESS" ? "#16a34a" : baseProjectColor, 0.35)}`,
+                            }}
+                        />
+                    )}
+                </div>
+                <div className="mt-3 text-xs text-slate-600 flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                        {project.status === "SUCCESS"
+                            ? "✅ 已完成"
+                            : currentUnlockedMilestone
+                                ? `进行中：当前里程碑「${currentUnlockedMilestone.title}」`
+                                : "进行中：等待里程碑解锁"}
+                    </div>
+                    {currentUnlockedMilestone?.target_date && project.status !== "SUCCESS" && (
+                        <div>预计完成：{new Date(currentUnlockedMilestone.target_date).toLocaleDateString()}</div>
+                    )}
                 </div>
             </div>
 
@@ -453,72 +678,208 @@ function ProjectDetailContent() {
                 )}
 
                 <div className="grid gap-4">
-                    {milestones?.map((milestone, index) => (
-                        <div
-                            key={milestone.id}
-                            className={`p-4 rounded-lg border ${milestone.status === "ACHIEVED" ? "bg-success/5 border-success/20" : "bg-card border-border"}`}
-                        >
-                            {editingMilestoneId === milestone.id ? (
-                                <MilestoneForm
-                                    initialData={milestone}
-                                    onSave={async (data) => {
-                                        await handleUpdateMilestone(milestone.id, data);
-                                        setEditingMilestoneId(null);
-                                    }}
-                                    onCancel={() => setEditingMilestoneId(null)}
-                                    isProcessing={processing}
-                                />
-                            ) : (
-                                <div className="flex items-start justify-between">
-                                    <div className="flex items-start gap-4 flex-1">
-                                        <div className={`mt-1 flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold ${milestone.status === "ACHIEVED" ? "bg-success text-success-foreground" : "bg-muted text-muted-foreground"}`}>
-                                            {index + 1}
-                                        </div>
-                                        <div className="flex-1">
-                                            <h3 className={`font-medium flex items-center gap-2 ${milestone.status === "ACHIEVED" ? "line-through text-muted-foreground" : ""}`}>
-                                                {milestone.title}
-                                                {milestone.is_critical && <span className="text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded">关键</span>}
-                                            </h3>
-                                            <p className="text-sm text-muted-foreground mt-1">{milestone.description}</p>
-                                            {milestone.target_date && (
-                                                <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
-                                                    <Calendar className="w-3 h-3" />
-                                                    目标日期: {new Date(milestone.target_date).toLocaleDateString()}
-                                                </p>
-                                            )}
-                                        </div>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        {project.status === "ACTIVE" && milestone.status !== "ACHIEVED" && (
-                                            <button
-                                                className="text-sm px-2 py-1 border border-border rounded hover:bg-muted"
-                                                onClick={() => markAchieved(milestone.id)}
-                                                title="标记为达成"
-                                            >
-                                                <CheckCircle className="w-4 h-4 text-muted-foreground hover:text-success" />
-                                            </button>
-                                        )}
-                                        <button
-                                            onClick={() => setEditingMilestoneId(milestone.id)}
-                                            className="p-1 text-muted-foreground hover:text-foreground"
-                                            title="编辑"
-                                        >
-                                            <Edit2 className="w-4 h-4" />
-                                        </button>
-                                        <button
-                                            onClick={() => handleDeleteMilestone(milestone.id)}
-                                            className="p-1 text-muted-foreground hover:text-red-500"
-                                            title="删除"
-                                        >
-                                            <Trash2 className="w-4 h-4" />
-                                        </button>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    ))}
 
-                    {(!milestones || milestones.length === 0) && !isAddingMilestone && (
+{orderedMilestones.map((milestone, index) => {
+    const visual = getMilestoneVisual(milestone, index);
+    const metrics = getMilestoneMetrics(milestone.id);
+    const milestoneTasks = metrics.list;
+
+    return (
+        <div
+            key={milestone.id}
+            className={`p-4 rounded-2xl border milestone-card-hover ${visual.isCurrent ? "milestone-current-glow" : ""}`}
+            style={visual.cardStyle}
+        >
+            {editingMilestoneId === milestone.id ? (
+                <MilestoneForm
+                    initialData={milestone}
+                    onSave={async (data) => {
+                        await handleUpdateMilestone(milestone.id, data);
+                        setEditingMilestoneId(null);
+                    }}
+                    onCancel={() => setEditingMilestoneId(null)}
+                    isProcessing={processing}
+                />
+            ) : (
+                <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-start gap-3 flex-1 min-w-0">
+                        <div
+                            className="mt-1 w-1 self-stretch rounded-full min-h-[32px]"
+                            style={{ backgroundColor: visual.isDone ? "#22c55e" : (visual.isLocked ? "#D1D5DB" : visual.accent) }}
+                        />
+                        <div
+                            className="mt-1 flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold border shrink-0"
+                            style={{
+                                backgroundColor: visual.isDone ? alpha("#22c55e", 0.12) : (visual.isLocked ? "#F1F5F9" : alpha(visual.accent, 0.12)),
+                                color: visual.isDone ? "#15803d" : (visual.isLocked ? "#64748b" : visual.accent),
+                                borderColor: visual.isDone ? alpha("#22c55e", 0.22) : (visual.isLocked ? "#E2E8F0" : alpha(visual.accent, 0.25)),
+                            }}
+                        >
+                            {index + 1}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                            <h3 className={`font-medium flex flex-wrap items-center gap-2 ${milestone.status === "ACHIEVED" ? "line-through text-muted-foreground" : ""}`}>
+                                {milestone.title}
+                                {milestone.is_critical && <span className="text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded">关键</span>}
+                                {visual.isDone ? (
+                                    <span className="text-xs px-1.5 py-0.5 rounded inline-flex items-center gap-1 border bg-green-50 text-green-700 border-green-200">
+                                        <CheckCircle className="w-3 h-3" />
+                                        已完成
+                                    </span>
+                                ) : visual.isLocked ? (
+                                    <span className="text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded inline-flex items-center gap-1 border border-slate-200">
+                                        <Lock className="w-3 h-3" />
+                                        未解锁
+                                    </span>
+                                ) : (
+                                    <span
+                                        className="text-xs px-1.5 py-0.5 rounded inline-flex items-center gap-1 border"
+                                        style={{
+                                            color: visual.accent,
+                                            borderColor: alpha(visual.accent, 0.25),
+                                            backgroundColor: alpha(visual.accent, 0.08),
+                                        }}
+                                    >
+                                        {visual.isCurrent ? "进行中" : "已解锁"}
+                                    </span>
+                                )}
+                            </h3>
+                            <p className={`text-sm mt-1 ${visual.isLocked ? "text-slate-500" : "text-muted-foreground"}`}>{milestone.description}</p>
+                            <div className="mt-2 space-y-1">
+                                <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+                                    <span>已完成 {metrics.done}/{metrics.total || 0}</span>
+                                    {milestone.target_date && milestone.is_unlocked !== false && (
+                                        <span>截止：{new Date(milestone.target_date).toLocaleDateString()}</span>
+                                    )}
+                                </div>
+                                <div
+                                    className="relative h-2.5 rounded-full overflow-hidden"
+                                    style={{ backgroundColor: visual.isLocked ? "#E5E7EB" : alpha(visual.accent, 0.14) }}
+                                >
+                                    <div
+                                        className="milestone-progress-fill h-full rounded-full"
+                                        style={{
+                                            width: `${Math.max(0, Math.min(metrics.percent, 100))}%`,
+                                            background: visual.isLocked
+                                                ? "#CBD5E1"
+                                                : (visual.isDone
+                                                    ? "linear-gradient(90deg, #22c55e 0%, #16a34a 100%)"
+                                                    : `linear-gradient(90deg, ${alpha(visual.accent, 0.82)} 0%, ${visual.accent} 100%)`),
+                                            boxShadow: visual.isDone ? "0 0 14px rgba(34,197,94,0.18)" : undefined,
+                                        }}
+                                    />
+                                </div>
+                            </div>
+                            {milestone.target_date && milestone.is_unlocked !== false && (
+                                <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+                                    <Calendar className="w-3 h-3" />
+                                    目标日期: {new Date(milestone.target_date).toLocaleDateString()}
+                                </p>
+                            )}
+                            {milestoneTasks.length ? (
+                                <div className="mt-3 space-y-2">
+                                    <div className="text-xs text-muted-foreground">里程碑任务（{milestoneTasks.length}）</div>
+                                    {milestoneTasks.map((task) => {
+                                        const taskLocked = isTaskEffectivelyLocked(task);
+                                        return (
+                                            <div
+                                                key={task.id}
+                                                className="rounded-xl border px-3 py-2"
+                                                style={{
+                                                    backgroundColor: taskLocked ? "#F8FAFC" : alpha(visual.accent, 0.05),
+                                                    borderColor: taskLocked ? "#E5E7EB" : alpha(visual.accent, 0.14),
+                                                }}
+                                            >
+                                                <div className="flex items-center justify-between gap-2">
+                                                    <div className={`text-sm font-medium truncate ${taskLocked ? "text-slate-500" : ""}`}>{task.title}</div>
+                                                    {taskLocked ? (
+                                                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-sm text-xs font-medium border bg-slate-100 text-slate-600 border-slate-200">
+                                                            未解锁
+                                                        </span>
+                                                    ) : (
+                                                        <StatusBadge status={getTaskVisualStatus(task)} type="task" />
+                                                    )}
+                                                </div>
+                                                {task.description && (
+                                                    <div className={`text-xs mt-1 line-clamp-2 ${taskLocked ? "text-slate-400" : "text-muted-foreground"}`}>
+                                                        {task.description}
+                                                    </div>
+                                                )}
+                                                {task.deadline && !shouldHideTaskSchedule(task) && (
+                                                    <div className="text-xs text-muted-foreground mt-1">
+                                                        截止：{new Date(task.deadline).toLocaleString()}
+                                                    </div>
+                                                )}
+                                                {shouldHideTaskSchedule(task) && (
+                                                    <div className="text-xs text-slate-400 mt-1">解锁后自动排期</div>
+                                                )}
+                                                <div className="mt-2 flex items-center gap-2">
+                                                    {project.status === "PROPOSED" && (
+                                                        <button
+                                                            onClick={() => setEditingTask(task)}
+                                                            className="text-xs px-2 py-1 border border-border rounded hover:bg-muted"
+                                                        >
+                                                            编辑任务
+                                                        </button>
+                                                    )}
+                                                    <Link
+                                                        href={`/tasks/${task.id}`}
+                                                        className="text-xs px-2 py-1 border border-border rounded hover:bg-muted"
+                                                    >
+                                                        查看任务
+                                                    </Link>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            ) : null}
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                        {project.status === "PROPOSED" && (
+                            <button
+                                onClick={() => {
+                                    setCreateTaskMilestoneId(milestone.id);
+                                    setIsAddingTask(true);
+                                }}
+                                className="text-xs px-2 py-1 border border-border rounded hover:bg-muted"
+                                title="添加里程碑任务"
+                            >
+                                + 任务
+                            </button>
+                        )}
+                        {project.status === "ACTIVE" && milestone.status !== "ACHIEVED" && milestoneTasks.length === 0 && (
+                            <button
+                                className="text-sm px-2 py-1 border border-border rounded hover:bg-muted"
+                                onClick={() => markAchieved(milestone.id)}
+                                title="标记为达成"
+                            >
+                                <CheckCircle className="w-4 h-4 text-muted-foreground hover:text-success" />
+                            </button>
+                        )}
+                        <button
+                            onClick={() => setEditingMilestoneId(milestone.id)}
+                            className="p-1 text-muted-foreground hover:text-foreground"
+                            title="编辑"
+                        >
+                            <Edit2 className="w-4 h-4" />
+                        </button>
+                        <button
+                            onClick={() => handleDeleteMilestone(milestone.id)}
+                            className="p-1 text-muted-foreground hover:text-red-500"
+                            title="删除"
+                        >
+                            <Trash2 className="w-4 h-4" />
+                        </button>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+})}
+
+                    {orderedMilestones.length === 0 && !isAddingMilestone && (
                         <div className="text-center py-8 text-muted-foreground">
                             暂无里程碑
                         </div>
@@ -595,7 +956,10 @@ function ProjectDetailContent() {
                             添加长期任务
                         </button>
                         <button
-                            onClick={() => setIsAddingTask(true)}
+                            onClick={() => {
+                                setCreateTaskMilestoneId(null);
+                                setIsAddingTask(true);
+                            }}
                             className="text-sm px-3 py-1 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 flex items-center gap-1"
                         >
                             <Plus className="w-4 h-4" />
@@ -604,9 +968,9 @@ function ProjectDetailContent() {
                     </div>
                 </div>
 
-                {tasks && tasks.length > 0 ? (
+                {allProjectTasks.length > 0 ? (
                     <div className="grid gap-3">
-                        {tasks.map((task) => (
+                        {allProjectTasks.map((task) => (
                             <div
                                 key={task.id}
                                 className="p-4 rounded-lg border bg-card hover:bg-muted/50 transition-colors"
@@ -619,14 +983,28 @@ function ProjectDetailContent() {
                                                 {task.description}
                                             </p>
                                         )}
-                                        {task.deadline && (
+                                        {task.milestone_id && milestoneLookup[task.milestone_id] && (
+                                            <p className="text-xs text-muted-foreground mt-2">
+                                                所属里程碑：{(milestoneLookup[task.milestone_id].order_index ?? 0) + 1} · {milestoneLookup[task.milestone_id].title}
+                                            </p>
+                                        )}
+                                        {task.deadline && !shouldHideTaskSchedule(task) && (
                                             <p className="text-xs text-muted-foreground mt-2">
                                                 截止：{new Date(task.deadline).toLocaleString()}
                                             </p>
                                         )}
+                                        {shouldHideTaskSchedule(task) && (
+                                            <p className="text-xs text-slate-400 mt-2">解锁后自动排期</p>
+                                        )}
                                     </div>
                                     <div className="flex items-center gap-2">
-                                        <StatusBadge status={task.status} type="task" />
+                                        {isTaskEffectivelyLocked(task) ? (
+                                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-sm text-xs font-medium border bg-slate-100 text-slate-600 border-slate-200">
+                                                未解锁
+                                            </span>
+                                        ) : (
+                                            <StatusBadge status={getTaskVisualStatus(task)} type="task" />
+                                        )}
                                         {project.status === "PROPOSED" && (
                                             <button
                                                 onClick={() => setEditingTask(task)}
@@ -657,8 +1035,14 @@ function ProjectDetailContent() {
 
             <CreateTaskModal
                 isOpen={isAddingTask}
-                onClose={() => setIsAddingTask(false)}
+                onClose={() => {
+                    setIsAddingTask(false);
+                    setCreateTaskMilestoneId(null);
+                }}
                 defaultProjectId={id}
+                defaultMilestoneId={createTaskMilestoneId}
+                milestones={orderedMilestones}
+                onSuccess={() => reloadTasks()}
             />
 
             <CreateLongTaskModal
@@ -673,6 +1057,7 @@ function ProjectDetailContent() {
                     task={editingTask}
                     onClose={() => setEditingTask(null)}
                     onSave={handleUpdateTask}
+                    milestones={orderedMilestones}
                 />
             )}
 

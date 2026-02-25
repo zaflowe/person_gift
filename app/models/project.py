@@ -44,6 +44,7 @@ class Milestone(Base):
     
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     project_id = Column(String, ForeignKey("projects.id"), nullable=False)
+    order_index = Column(Integer, nullable=False, default=0)
     title = Column(String, nullable=False)
     description = Column(Text, nullable=True)
     is_critical = Column(Boolean, default=False, nullable=False)
@@ -54,3 +55,4 @@ class Milestone(Base):
     
     # Relationships
     project = relationship("Project", back_populates="milestones")
+    tasks = relationship("Task", back_populates="milestone")

@@ -25,12 +25,21 @@ class PlannedTask(BaseModel):
     due_at: str = Field(..., description="ISO 8601 datetime with timezone")
     evidence_type: str = Field(default="none", pattern="^(none|text|number|image)$")
     tags: Optional[List[str]] = None
+    milestone_index: Optional[int] = Field(default=None, description="0-based milestone index this task belongs to")
 
 
 class PlannedProject(BaseModel):
     """Planned project information."""
     title: str = Field(..., min_length=1, max_length=200)
     description: Optional[str] = None
+
+
+class PlannedMilestone(BaseModel):
+    """A planned milestone (optionally with nested tasks)."""
+    title: str = Field(..., min_length=1, max_length=200)
+    description: Optional[str] = None
+    due_at: Optional[str] = Field(default=None, description="ISO 8601 datetime with timezone")
+    tasks: Optional[List[PlannedTask]] = None
 
 
 class PlanResponse(BaseModel):

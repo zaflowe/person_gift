@@ -23,6 +23,22 @@ class ProjectService:
     """Project business logic service."""
 
     @staticmethod
+    def _ordered_milestones(db: Session, project_id: str) -> List[Milestone]:
+        return db.query(Milestone).filter(
+            Milestone.project_id == project_id
+        ).order_by(Milestone.order_index.asc(), Milestone.id.asc()).all()
+
+    @staticmethod
+    def _milestone_unlock_flags(milestones: List[Milestone]) -> dict[str, bool]:
+        flags: dict[str, bool] = {}
+        prior_blocked = False
+        for m in sorted(milestones, key=lambda x: (x.order_index or 0, x.id)):
+            flags[m.id] = not prior_blocked
+            if m.status != "ACHIEVED":
+                prior_blocked = True
+        return flags
+
+    @staticmethod
     def _apply_proposed_target_date(milestone: Milestone, base_date: date | None = None) -> None:
         if milestone.proposal_offset_days is None:
             return
@@ -30,25 +46,82 @@ class ProjectService:
         milestone.target_date = base + timedelta(days=milestone.proposal_offset_days)
 
     @staticmethod
+    def _apply_proposed_milestone_chain(milestones: List[Milestone], base_date: date | None = None) -> None:
+        """Project proposal dates for sequential milestones using relative offsets."""
+        anchor = base_date or date.today()
+        projected_prev: date | None = None
+        for milestone in sorted(milestones, key=lambda x: (x.order_index or 0, x.id)):
+            if milestone.proposal_offset_days is None:
+                continue
+            chain_base = projected_prev or anchor
+            milestone.target_date = chain_base + timedelta(days=milestone.proposal_offset_days)
+            projected_prev = milestone.target_date
+
+    @staticmethod
+    def _schedule_task_from_offset(task: Task, base_date: date) -> None:
+        if task.proposal_offset_days is None:
+            return
+        target_date = base_date + timedelta(days=task.proposal_offset_days)
+        deadline_time = task.deadline.time() if task.deadline else time(23, 59, 59)
+        task.deadline = datetime.combine(target_date, deadline_time)
+
+        # Preserve planned duration while aligning start to target date.
+        if task.scheduled_time:
+            start_time = task.scheduled_time.time()
+        elif task.deadline:
+            start_time = (task.deadline - timedelta(minutes=task.duration or 60)).time()
+        else:
+            start_time = time(0, 0, 0)
+
+        task.scheduled_time = datetime.combine(target_date, start_time)
+        task.scheduled_date = task.scheduled_time
+        if task.duration and task.duration > 0:
+            calc_deadline = task.scheduled_time + timedelta(minutes=task.duration)
+            if calc_deadline > task.deadline:
+                task.deadline = calc_deadline
+        task.proposal_offset_days = None
+
+    @staticmethod
+    def _schedule_milestone_group(db: Session, milestone: Milestone, base_date: date) -> None:
+        if milestone.proposal_offset_days is not None:
+            milestone.target_date = base_date + timedelta(days=milestone.proposal_offset_days)
+            milestone.proposal_offset_days = None
+        elif milestone.target_date is None:
+            milestone.target_date = base_date
+
+        tasks = db.query(Task).filter(Task.milestone_id == milestone.id).all()
+        for task in tasks:
+            ProjectService._schedule_task_from_offset(task, base_date)
+            if task.status == "LOCKED":
+                task.status = "OPEN"
+            elif task.status not in {"DONE", "EXCUSED"} and not task.status:
+                task.status = "OPEN"
+
+    @staticmethod
+    def _lock_future_milestone_groups(db: Session, milestones: List[Milestone], unlocked_order: int) -> None:
+        future_ids = [m.id for m in milestones if (m.order_index or 0) > unlocked_order]
+        if not future_ids:
+            return
+        future_tasks = db.query(Task).filter(Task.milestone_id.in_(future_ids)).all()
+        for task in future_tasks:
+            if task.status not in {"DONE", "EXCUSED"}:
+                task.status = "LOCKED"
+
+    @staticmethod
     def _activate_project_items(db: Session, project: Project) -> None:
         base_dt = project.user_confirmed_at or datetime.utcnow()
         base_date = base_dt.date()
 
-        tasks = db.query(Task).filter(Task.project_id == project.id).all()
+        tasks = db.query(Task).filter(Task.project_id == project.id, Task.milestone_id.is_(None)).all()
         for task in tasks:
-            if task.proposal_offset_days is None:
-                continue
-            target_date = base_date + timedelta(days=task.proposal_offset_days)
-            deadline_time = task.deadline.time() if task.deadline else time(23, 59, 59)
-            task.deadline = datetime.combine(target_date, deadline_time)
-            task.proposal_offset_days = None
+            ProjectService._schedule_task_from_offset(task, base_date)
 
-        milestones = db.query(Milestone).filter(Milestone.project_id == project.id).all()
-        for milestone in milestones:
-            if milestone.proposal_offset_days is None:
-                continue
-            milestone.target_date = base_date + timedelta(days=milestone.proposal_offset_days)
-            milestone.proposal_offset_days = None
+        ordered_milestones = ProjectService._ordered_milestones(db, project.id)
+        if ordered_milestones:
+            first_pending = next((m for m in ordered_milestones if m.status == "PENDING"), None)
+            if first_pending:
+                ProjectService._schedule_milestone_group(db, first_pending, base_date)
+                ProjectService._lock_future_milestone_groups(db, ordered_milestones, first_pending.order_index or 0)
 
         templates = db.query(ProjectLongTaskTemplate).filter(
             ProjectLongTaskTemplate.project_id == project.id
@@ -56,6 +129,19 @@ class ProjectService:
         for template in templates:
             template.started_at = base_dt
             template.updated_at = datetime.utcnow()
+
+    @staticmethod
+    def _unlock_next_milestone_group(db: Session, project: Project, achieved_milestone: Milestone) -> None:
+        milestones = ProjectService._ordered_milestones(db, project.id)
+        next_milestone = next(
+            (m for m in milestones if (m.order_index or 0) > (achieved_milestone.order_index or 0) and m.status == "PENDING"),
+            None
+        )
+        if not next_milestone:
+            return
+        base_date = (achieved_milestone.achieved_at or datetime.utcnow()).date()
+        ProjectService._schedule_milestone_group(db, next_milestone, base_date)
+        ProjectService._lock_future_milestone_groups(db, milestones, next_milestone.order_index or 0)
     
     @staticmethod
     def create_project(db: Session, user: User, project_data: ProjectCreate) -> Project:
@@ -242,10 +328,17 @@ class ProjectService:
         if project.status == "PROPOSED" and milestone_data.target_date:
             proposal_offset_days = (milestone_data.target_date - date.today()).days
 
+        payload = milestone_data.dict()
+        requested_order = payload.pop("order_index", None)
+        if requested_order is None:
+            max_order = db.query(Milestone).filter(Milestone.project_id == project.id).count()
+            requested_order = max_order
+
         milestone = Milestone(
             project_id=project.id,
             proposal_offset_days=proposal_offset_days,
-            **milestone_data.dict()
+            order_index=requested_order,
+            **payload
         )
         db.add(milestone)
         db.commit()
@@ -258,12 +351,14 @@ class ProjectService:
         project = ProjectService.get_project(db, project_id, user)
         milestones = db.query(Milestone).filter(
             Milestone.project_id == project.id
-        ).all()
+        ).order_by(Milestone.order_index.asc(), Milestone.id.asc()).all()
 
         if project.status == "PROPOSED":
-            base = date.today()
-            for milestone in milestones:
-                ProjectService._apply_proposed_target_date(milestone, base)
+            ProjectService._apply_proposed_milestone_chain(milestones, date.today())
+
+        unlock_flags = ProjectService._milestone_unlock_flags(milestones)
+        for milestone in milestones:
+            milestone.is_unlocked = unlock_flags.get(milestone.id, True)
 
         return milestones
         
@@ -296,6 +391,8 @@ class ProjectService:
             milestone.target_date = update_data.target_date
             if project.status == "PROPOSED":
                 milestone.proposal_offset_days = (update_data.target_date - date.today()).days
+        if update_data.order_index is not None:
+            milestone.order_index = update_data.order_index
             
         db.commit()
         db.refresh(milestone)
@@ -355,7 +452,8 @@ class ProjectService:
         
         milestone.status = "ACHIEVED"
         milestone.achieved_at = datetime.utcnow()
-        
+
+        ProjectService._unlock_next_milestone_group(db, project, milestone)
         db.commit()
         
         # Check if project should transition to SUCCESS or remain ACTIVE

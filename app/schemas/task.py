@@ -13,6 +13,7 @@ class TaskCreate(BaseModel):
     evidence_criteria: Optional[str] = None
     deadline: Optional[datetime] = None
     project_id: Optional[str] = None
+    milestone_id: Optional[str] = None
     tags: Optional[list[str]] = []
     
     # Time blocking fields for creation
@@ -30,6 +31,8 @@ class TaskUpdate(BaseModel):
     tags: Optional[list[str]] = None
     scheduled_time: Optional[datetime] = None
     duration: Optional[int] = None
+    board_lane: Optional[Literal["IN_PROGRESS", "TODO"]] = None
+    milestone_id: Optional[str] = None
 
 
 class TaskResponse(BaseModel):
@@ -44,8 +47,11 @@ class TaskResponse(BaseModel):
     deadline: Optional[datetime]
     tags: Optional[list[str]] = []
     project_id: Optional[str]
+    milestone_id: Optional[str]
     plan_template_id: Optional[str]
     long_task_template_id: Optional[str]
+    board_lane: Optional[str] = None
+    board_lane_updated_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
     completed_at: Optional[datetime]

@@ -25,6 +25,7 @@ from app.schemas.conversation import (
 )
 from app.services.conversation_service import conversation_service
 from app.services.planner_service import planner_service
+from app.routers.planner import _normalize_plan_input
 
 logger = logging.getLogger(__name__)
 
@@ -277,7 +278,7 @@ async def chat(
             planning_message = collected_info.get("goal", request.message)
             planning_message += f"\n\n补充信息：{json.dumps(collected_info, ensure_ascii=False)}"
             
-            plan = planner_service.generate_plan(planning_message, context)
+            plan = _normalize_plan_input(planner_service.generate_plan(planning_message, context))
             
             # Create PlanningSession so it can be committed later
             from app.models.planning import PlanningSession
@@ -336,7 +337,7 @@ async def chat(
                 except Exception:
                     pass
 
-                plan = planner_service.generate_plan(planning_message, context)
+                plan = _normalize_plan_input(planner_service.generate_plan(planning_message, context))
                 new_planning_session_id = str(uuid.uuid4())
                 new_planning_session = PlanningSession(
                     id=new_planning_session_id,
@@ -381,7 +382,7 @@ async def chat(
                 )
             
             # Call AI to refine
-            refined_plan = conversation_service.refine_plan(current_plan, request.message)
+            refined_plan = _normalize_plan_input(conversation_service.refine_plan(current_plan, request.message))
             
             # Update PlanningSession
             planning_session.plan_json = json.dumps(refined_plan, ensure_ascii=False)

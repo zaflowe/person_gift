@@ -10,6 +10,7 @@ export function cn(...inputs: ClassValue[]) {
 // 状态映射：Task
 export const TASK_STATUS_MAP: Record<TaskStatus, { label: string; color: string }> = {
     OPEN: { label: "进行中", color: "info" },
+    LOCKED: { label: "LOCKED", color: "muted" },
     EVIDENCE_SUBMITTED: { label: "已提交证据", color: "purple" },
     OVERDUE: { label: "已逾期", color: "error" },
     DONE: { label: "已完成", color: "success" },
