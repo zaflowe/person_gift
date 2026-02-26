@@ -199,13 +199,25 @@ def _ensure_study_quick_start_columns():
     columns = [col["name"] for col in inspector.get_columns("study_sessions")]
     with engine.begin() as conn:
         if "is_quick_start" not in columns:
-            conn.execute(text("ALTER TABLE study_sessions ADD COLUMN is_quick_start BOOLEAN DEFAULT 0"))
+            if settings.database_url.startswith("sqlite"):
+                conn.execute(text("ALTER TABLE study_sessions ADD COLUMN is_quick_start BOOLEAN DEFAULT 0"))
+            else:
+                conn.execute(text("ALTER TABLE study_sessions ADD COLUMN IF NOT EXISTS is_quick_start BOOLEAN DEFAULT FALSE"))
         if "quick_start_action" not in columns:
-            conn.execute(text("ALTER TABLE study_sessions ADD COLUMN quick_start_action VARCHAR"))
+            if settings.database_url.startswith("sqlite"):
+                conn.execute(text("ALTER TABLE study_sessions ADD COLUMN quick_start_action VARCHAR"))
+            else:
+                conn.execute(text("ALTER TABLE study_sessions ADD COLUMN IF NOT EXISTS quick_start_action VARCHAR"))
         if "quick_start_valid" not in columns:
-            conn.execute(text("ALTER TABLE study_sessions ADD COLUMN quick_start_valid BOOLEAN DEFAULT 0"))
+            if settings.database_url.startswith("sqlite"):
+                conn.execute(text("ALTER TABLE study_sessions ADD COLUMN quick_start_valid BOOLEAN DEFAULT 0"))
+            else:
+                conn.execute(text("ALTER TABLE study_sessions ADD COLUMN IF NOT EXISTS quick_start_valid BOOLEAN DEFAULT FALSE"))
         if "quick_start_task_id" not in columns:
-            conn.execute(text("ALTER TABLE study_sessions ADD COLUMN quick_start_task_id VARCHAR"))
+            if settings.database_url.startswith("sqlite"):
+                conn.execute(text("ALTER TABLE study_sessions ADD COLUMN quick_start_task_id VARCHAR"))
+            else:
+                conn.execute(text("ALTER TABLE study_sessions ADD COLUMN IF NOT EXISTS quick_start_task_id VARCHAR"))
 
 
 def _ensure_task_quick_start_columns():
@@ -216,11 +228,20 @@ def _ensure_task_quick_start_columns():
     columns = [col["name"] for col in inspector.get_columns("tasks")]
     with engine.begin() as conn:
         if "is_quick_start" not in columns:
-            conn.execute(text("ALTER TABLE tasks ADD COLUMN is_quick_start BOOLEAN DEFAULT 0"))
+            if settings.database_url.startswith("sqlite"):
+                conn.execute(text("ALTER TABLE tasks ADD COLUMN is_quick_start BOOLEAN DEFAULT 0"))
+            else:
+                conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS is_quick_start BOOLEAN DEFAULT FALSE"))
         if "quick_start_action" not in columns:
-            conn.execute(text("ALTER TABLE tasks ADD COLUMN quick_start_action TEXT"))
+            if settings.database_url.startswith("sqlite"):
+                conn.execute(text("ALTER TABLE tasks ADD COLUMN quick_start_action TEXT"))
+            else:
+                conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS quick_start_action TEXT"))
         if "quick_start_session_id" not in columns:
-            conn.execute(text("ALTER TABLE tasks ADD COLUMN quick_start_session_id VARCHAR"))
+            if settings.database_url.startswith("sqlite"):
+                conn.execute(text("ALTER TABLE tasks ADD COLUMN quick_start_session_id VARCHAR"))
+            else:
+                conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS quick_start_session_id VARCHAR"))
 
 
 def _backfill_task_time_windows():
