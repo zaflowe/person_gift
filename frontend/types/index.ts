@@ -30,6 +30,8 @@ export interface Task {
     long_task_template_id?: string;
     board_lane?: "IN_PROGRESS" | "TODO" | null;
     board_lane_updated_at?: string;
+    is_quick_start?: boolean;
+    quick_start_action?: string;
     completed_at?: string;
     created_at: string;
     updated_at?: string;

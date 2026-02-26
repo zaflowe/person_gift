@@ -42,6 +42,11 @@ class Task(Base):
     board_lane = Column(String, nullable=True)  # IN_PROGRESS / TODO / None(auto)
     board_lane_updated_at = Column(DateTime, nullable=True)
 
+    # Quick Start record metadata (for study-session generated completed tasks)
+    is_quick_start = Column(Boolean, default=False, nullable=False)
+    quick_start_action = Column(Text, nullable=True)
+    quick_start_session_id = Column(String, ForeignKey("study_sessions.id"), nullable=True)
+
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     completed_at = Column(DateTime, nullable=True)

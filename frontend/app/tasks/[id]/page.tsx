@@ -4,12 +4,12 @@ import { RequireAuth } from "@/lib/auth-context";
 import { AppLayout } from "@/components/layout/app-layout";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { apiPost, fetcher } from "@/lib/utils";
+import { apiPost, apiPatch, fetcher } from "@/lib/utils";
 import { Task } from "@/types";
 import { ArrowLeft, CheckCircle, Clock, Shield, Upload, AlertTriangle, FileText } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import useSWR from "swr";
 
 export default function TaskDetailPage() {
@@ -32,11 +32,25 @@ function TaskDetailContent() {
     const [evidenceContent, setEvidenceContent] = useState("");
     const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
     const [submitResult, setSubmitResult] = useState<{ result: string, reason: string } | null>(null);
+    const [quickStartTitle, setQuickStartTitle] = useState("");
+    const [quickStartAction, setQuickStartAction] = useState("");
+    const [quickStartNote, setQuickStartNote] = useState("");
+
+    useEffect(() => {
+        if (!task?.is_quick_start) return;
+        const fallback = `Quick Start ${new Date(task.created_at).toLocaleString()}`;
+        setQuickStartTitle(task.title || fallback);
+        setQuickStartAction(task.quick_start_action || "");
+        setQuickStartNote(task.description || "");
+    }, [task?.id, task?.updated_at]);
 
     if (error) return <div className="p-6 text-red-500">Loading failed</div>;
     if (!task) return <div className="p-6">Loading...</div>;
 
     const isReviewable = task.status === "OPEN" || task.status === "OVERDUE" || task.status === "EVIDENCE_SUBMITTED";
+    const isQuickStartTask = !!task.is_quick_start;
+
+    const defaultQuickStartTitle = `Quick Start ${new Date(task.created_at).toLocaleString()}`;
 
     // Handle Evidence Submission
     const handleSubmitEvidence = async (e: React.FormEvent) => {
@@ -122,6 +136,23 @@ function TaskDetailContent() {
         }
     };
 
+    const handleSaveQuickStartRecord = async () => {
+        setSubmitting(true);
+        try {
+            await apiPatch(`/api/tasks/${id}`, {
+                title: (quickStartTitle || "").trim() || defaultQuickStartTitle,
+                quick_start_action: (quickStartAction || "").trim() || null,
+                description: (quickStartNote || "").trim() || null,
+            });
+            await reloadTask();
+            alert("Quick Start 记录已保存");
+        } catch (err: any) {
+            alert(err.message || "保存失败");
+        } finally {
+            setSubmitting(false);
+        }
+    };
+
     return (
         <div className="max-w-4xl mx-auto p-6 space-y-6">
             {/* Header */}
@@ -157,6 +188,50 @@ function TaskDetailContent() {
                     </div>
                 </div>
             </div>
+
+            {isQuickStartTask && (
+                <div className="bg-card border border-amber-200 rounded-lg p-6">
+                    <h2 className="font-medium mb-3">Quick Start 补录</h2>
+                    <div className="space-y-4">
+                        <div>
+                            <label className="block text-sm font-medium mb-1">成果（任务名称，可后补）</label>
+                            <input
+                                value={quickStartTitle}
+                                onChange={(e) => setQuickStartTitle(e.target.value)}
+                                className="w-full h-10 px-3 rounded-md border border-border bg-background"
+                                placeholder={defaultQuickStartTitle}
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium mb-1">最小动作（可选）</label>
+                            <input
+                                value={quickStartAction}
+                                onChange={(e) => setQuickStartAction(e.target.value)}
+                                className="w-full h-10 px-3 rounded-md border border-border bg-background"
+                                placeholder="例如：打开题册、写5分钟代码"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium mb-1">备注 / 补充（可选）</label>
+                            <textarea
+                                value={quickStartNote}
+                                onChange={(e) => setQuickStartNote(e.target.value)}
+                                className="w-full p-2 bg-background border border-border rounded-md min-h-[96px]"
+                                placeholder="记录本次产出、下一步..."
+                            />
+                        </div>
+                        <div className="flex justify-end">
+                            <button
+                                onClick={handleSaveQuickStartRecord}
+                                disabled={submitting}
+                                className="px-4 py-2 rounded-md bg-foreground text-background hover:bg-gray-700 disabled:opacity-50"
+                            >
+                                {submitting ? "保存中..." : "保存 Quick Start 记录"}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* AI Feedback Area */}
             {submitResult && (

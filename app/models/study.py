@@ -1,7 +1,7 @@
 """Study session models."""
 import uuid
 from datetime import datetime
-from sqlalchemy import Column, String, DateTime, ForeignKey, Integer, Enum
+from sqlalchemy import Column, String, DateTime, ForeignKey, Integer, Boolean
 from sqlalchemy.orm import relationship
 import enum
 
@@ -37,7 +37,14 @@ class StudySession(Base):
     
     status = Column(String, default=SessionStatus.COMPLETED.value) # completed/abandoned
 
+    # Quick Start metadata
+    is_quick_start = Column(Boolean, default=False, nullable=False)
+    quick_start_action = Column(String, nullable=True)
+    quick_start_valid = Column(Boolean, default=False, nullable=False)
+    quick_start_task_id = Column(String, ForeignKey("tasks.id"), nullable=True)
+
     # Relationships
     user = relationship("User", back_populates="study_sessions")
     project = relationship("Project")
-    task = relationship("Task")
+    task = relationship("Task", foreign_keys=[task_id])
+    quick_start_task = relationship("Task", foreign_keys=[quick_start_task_id])

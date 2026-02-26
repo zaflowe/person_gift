@@ -33,6 +33,7 @@ class TaskUpdate(BaseModel):
     duration: Optional[int] = None
     board_lane: Optional[Literal["IN_PROGRESS", "TODO"]] = None
     milestone_id: Optional[str] = None
+    quick_start_action: Optional[str] = None
 
 
 class TaskResponse(BaseModel):
@@ -50,6 +51,8 @@ class TaskResponse(BaseModel):
     milestone_id: Optional[str]
     plan_template_id: Optional[str]
     long_task_template_id: Optional[str]
+    is_quick_start: bool = False
+    quick_start_action: Optional[str] = None
     board_lane: Optional[str] = None
     board_lane_updated_at: Optional[datetime] = None
     created_at: datetime

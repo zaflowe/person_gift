@@ -13,6 +13,7 @@ interface FocusTimerProps {
     onAbandon: () => void;
     contextLabel: string; // Project Name > Task Title or Label
     subContextLabel?: string; // Task Title (if project is main)
+    quickStartHint?: string | null;
 }
 
 export function FocusTimer({
@@ -24,6 +25,7 @@ export function FocusTimer({
     onAbandon,
     contextLabel,
     subContextLabel,
+    quickStartHint,
 }: FocusTimerProps) {
 
     // Format H:MM:SS
@@ -54,6 +56,13 @@ export function FocusTimer({
                         <p className="text-lg text-primary">
                             {subContextLabel}
                         </p>
+                    )}
+                    {quickStartHint && (
+                        <div className="pt-1">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs border border-amber-200 bg-amber-50 text-amber-700">
+                                {quickStartHint}
+                            </span>
+                        </div>
                     )}
                 </div>
             </div>

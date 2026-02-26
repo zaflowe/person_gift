@@ -1,15 +1,13 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { useAuth } from "@/lib/auth-context";
 import { apiPost, fetcher } from "@/lib/utils";
 import { Project, Task } from "@/types";
 import { FocusTimer } from "./focus-timer";
-import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { AlertCircle, ArrowLeft } from "lucide-react";
 
 type SessionStatus = "entry" | "running" | "paused" | "completed";
+const QUICK_START_TASK_VALUE = "__quick_start__";
 
 interface FocusState {
     status: SessionStatus;
@@ -19,12 +17,13 @@ interface FocusState {
     projectId: string | null;
     taskId: string | null;
     customLabel: string;
+    isQuickStart?: boolean;
+    quickStartAction?: string;
     projectNameSnapshot?: string;
     taskTitleSnapshot?: string;
 }
 
 export function FocusController() {
-    const { user } = useAuth();
     const router = useRouter();
 
     // Data
@@ -36,6 +35,8 @@ export function FocusController() {
     const [selectedTaskId, setSelectedTaskId] = useState<string>("");
     const [selectedProjectId, setSelectedProjectId] = useState<string>("");
     const [customLabel, setCustomLabel] = useState<string>("");
+    const [quickStartAction, setQuickStartAction] = useState<string>("");
+    const [quickStartTodayCount, setQuickStartTodayCount] = useState<number>(0);
 
     // Session State
     const [sessionStatus, setSessionStatus] = useState<SessionStatus>("entry");
@@ -49,6 +50,10 @@ export function FocusController() {
     const [activeLabel, setActiveLabel] = useState<string>("");
     const [activeProjectName, setActiveProjectName] = useState<string>("");
     const [activeTaskTitle, setActiveTaskTitle] = useState<string>("");
+    const [activeIsQuickStart, setActiveIsQuickStart] = useState<boolean>(false);
+    const [activeQuickStartAction, setActiveQuickStartAction] = useState<string>("");
+    const [showQuickStartPrompt, setShowQuickStartPrompt] = useState(false);
+    const [quickStartPromptTaskId, setQuickStartPromptTaskId] = useState<string | null>(null);
 
     // Timer Logic
     const [elapsedSec, setElapsedSec] = useState(0);
@@ -58,12 +63,14 @@ export function FocusController() {
     useEffect(() => {
         const loadData = async () => {
             try {
-                const [pData, tData] = await Promise.all([
+                const [pData, tData, studyStats] = await Promise.all([
                     fetcher<Project[]>("/api/projects"),
-                    fetcher<Task[]>("/api/tasks")
+                    fetcher<Task[]>("/api/tasks"),
+                    fetcher<any>("/api/study/stats")
                 ]);
                 setProjects(pData.filter(p => p.status !== "SUCCESS" && p.status !== "FAILURE"));
                 setTasks(tData.filter(t => t.status !== "DONE"));
+                setQuickStartTodayCount(studyStats?.quick_start_today_count || 0);
             } catch (e) {
                 console.error("Failed to load setup data", e);
             } finally {
@@ -87,6 +94,8 @@ export function FocusController() {
                 setActiveProjectId(state.projectId);
                 setActiveTaskId(state.taskId);
                 setActiveLabel(state.customLabel);
+                setActiveIsQuickStart(!!state.isQuickStart);
+                setActiveQuickStartAction(state.quickStartAction || "");
                 setActiveProjectName(state.projectNameSnapshot || "");
                 setActiveTaskTitle(state.taskTitleSnapshot || "");
             } catch (e) {
@@ -149,35 +158,54 @@ export function FocusController() {
             projectId: activeProjectId,
             taskId: activeTaskId,
             customLabel: activeLabel,
+            isQuickStart: activeIsQuickStart,
+            quickStartAction: activeQuickStartAction,
             projectNameSnapshot: activeProjectName,
             taskTitleSnapshot: activeTaskTitle
         };
         localStorage.setItem("focus_state", JSON.stringify(state));
-    }, [sessionStatus, startTime, pausedTotalSec, lastPauseTime, activeProjectId, activeTaskId, activeLabel]);
+    }, [sessionStatus, startTime, pausedTotalSec, lastPauseTime, activeProjectId, activeTaskId, activeLabel, activeIsQuickStart, activeQuickStartAction, activeProjectName, activeTaskTitle]);
 
 
     // Handlers
+    const resetSessionToEntry = () => {
+        setSessionStatus("entry");
+        localStorage.removeItem("focus_state");
+        setElapsedSec(0);
+        setStartTime(0);
+        setPausedTotalSec(0);
+        setLastPauseTime(undefined);
+        setActiveProjectId(null);
+        setActiveTaskId(null);
+        setActiveLabel("");
+        setActiveProjectName("");
+        setActiveTaskTitle("");
+        setActiveIsQuickStart(false);
+        setActiveQuickStartAction("");
+    };
+
     const handleStart = () => {
+        const isQuickStartMode = selectedTaskId === QUICK_START_TASK_VALUE;
+        if (!isQuickStartMode && !selectedTaskId && !selectedProjectId && !customLabel) {
+            alert("请至少选择一个任务、项目或输入标签");
+            return;
+        }
+
         const now = Date.now();
         setStartTime(now);
         setSessionStatus("running");
 
         // Snapshot names
-        const task = tasks.find(t => t.id === selectedTaskId);
-        const project = projects.find(p => p.id === selectedProjectId);
+        const task = isQuickStartMode ? undefined : tasks.find(t => t.id === selectedTaskId);
+        const project = isQuickStartMode ? undefined : projects.find(p => p.id === selectedProjectId);
 
-        setActiveTaskId(selectedTaskId || null);
-        setActiveProjectId(selectedProjectId || null);
-        setActiveLabel(customLabel);
+        setActiveTaskId(isQuickStartMode ? null : (selectedTaskId || null));
+        setActiveProjectId(isQuickStartMode ? null : (selectedProjectId || null));
+        setActiveLabel(isQuickStartMode ? "Quick Start" : customLabel);
         setActiveTaskTitle(task?.title || "");
         setActiveProjectName(project?.title || "");
-
-        // Determine if logic path is valid
-        if (!selectedTaskId && !selectedProjectId && !customLabel) {
-            alert("请至少选择一个任务、项目或输入标签");
-            setSessionStatus("entry");
-            return;
-        }
+        setActiveIsQuickStart(isQuickStartMode);
+        setActiveQuickStartAction(isQuickStartMode ? quickStartAction.trim() : "");
     };
 
     const handlePause = () => {
@@ -200,18 +228,32 @@ export function FocusController() {
         }
 
         try {
-            await apiPost("/api/study/sessions", {
-                project_id: activeProjectId,
-                task_id: activeTaskId,
+            const result = await apiPost<any>("/api/study/sessions", {
+                project_id: activeIsQuickStart ? null : activeProjectId,
+                task_id: activeIsQuickStart ? null : activeTaskId,
                 custom_label: activeLabel,
                 created_at: new Date(startTime).toISOString(),
                 duration_sec: elapsedSec,
-                status: "completed"
+                status: "completed",
+                is_quick_start: activeIsQuickStart,
+                quick_start_action: activeIsQuickStart ? activeQuickStartAction : null,
             });
+            const shouldPromptQuickStart = Boolean(
+                activeIsQuickStart &&
+                elapsedSec >= 5 * 60 &&
+                result?.quick_start_valid &&
+                result?.quick_start_task_id
+            );
 
-            // Clear local storage logic handled by effect when status changes to completed/entry
-            setSessionStatus("entry");
-            localStorage.removeItem("focus_state");
+            if (shouldPromptQuickStart) {
+                setQuickStartTodayCount(prev => prev + 1);
+                setQuickStartPromptTaskId(result.quick_start_task_id);
+                setShowQuickStartPrompt(true);
+                resetSessionToEntry();
+                return;
+            }
+
+            resetSessionToEntry();
             router.push("/dashboard");
         } catch (e) {
             alert("提交失败，请重试");
@@ -219,11 +261,7 @@ export function FocusController() {
     };
 
     const handleAbandon = () => {
-        setSessionStatus("entry");
-        localStorage.removeItem("focus_state");
-        // Reset local state fields
-        setElapsedSec(0);
-        setStartTime(0);
+        resetSessionToEntry();
     };
 
     // Filter Logic
@@ -236,6 +274,11 @@ export function FocusController() {
     // Auto-fill Project on Task Select
     const onTaskSelect = (taskId: string) => {
         setSelectedTaskId(taskId);
+        if (taskId === QUICK_START_TASK_VALUE) {
+            setSelectedProjectId("");
+            setCustomLabel("");
+            return;
+        }
         if (taskId) {
             const task = tasks.find(t => t.id === taskId);
             // If task belongs to a project, auto-select that project
@@ -249,7 +292,7 @@ export function FocusController() {
     const onProjectSelect = (projectId: string) => {
         setSelectedProjectId(projectId);
         // If we selected a specific project (not "All/None"), check if current task is valid
-        if (projectId && selectedTaskId) {
+        if (projectId && selectedTaskId && selectedTaskId !== QUICK_START_TASK_VALUE) {
             const task = tasks.find(t => t.id === selectedTaskId);
             if (task && task.project_id !== projectId) {
                 setSelectedTaskId("");
@@ -257,6 +300,9 @@ export function FocusController() {
         }
     };
 
+
+    const isQuickStartMode = selectedTaskId === QUICK_START_TASK_VALUE;
+    const startDisabled = !isQuickStartMode && !selectedTaskId && !selectedProjectId && !customLabel;
 
     if (loading) return <div className="flex h-screen items-center justify-center">Loading...</div>;
 
@@ -272,8 +318,9 @@ export function FocusController() {
                 onAbandon={() => {
                     if (confirm("确定要放弃本次专注吗？记录将不会保存。")) handleAbandon();
                 }}
-                contextLabel={activeProjectName || activeLabel || "Free Focus"}
-                subContextLabel={activeTaskTitle}
+                contextLabel={activeIsQuickStart ? "Quick Start" : (activeProjectName || activeLabel || "Free Focus")}
+                subContextLabel={activeIsQuickStart ? (activeQuickStartAction || undefined) : activeTaskTitle}
+                quickStartHint={activeIsQuickStart ? `Quick Start · 今日第 ${quickStartTodayCount + 1} 次` : null}
             />
         );
     }
@@ -293,19 +340,23 @@ export function FocusController() {
                     <div className="space-y-2">
                         <label className="text-sm font-medium">选择任务 (Optional)</label>
                         <select
-                            className="w-full h-10 px-3 rounded-md border border-input bg-background"
+                            className={`w-full h-10 px-3 rounded-md border border-input bg-background ${isQuickStartMode ? "font-semibold text-amber-700 border-amber-300 bg-amber-50/50" : ""}`}
                             value={selectedTaskId}
                             onChange={(e) => onTaskSelect(e.target.value)}
                         >
                             <option value="">-- 不绑定任务 --</option>
+                            <option value={QUICK_START_TASK_VALUE} style={{ fontWeight: "700", color: "#b45309" }}>⚡ 快速启动</option>
                             {filteredTasks.map(t => (
                                 <option key={t.id} value={t.id}>{t.title}</option>
                             ))}
                         </select>
+                        {isQuickStartMode && (
+                            <p className="text-xs text-amber-700 font-medium">Quick Start 模式：不绑定项目，不填写专注目标</p>
+                        )}
                     </div>
 
                     {/* Path A: Project Select */}
-                    <div className="space-y-2">
+                    {!isQuickStartMode && <div className="space-y-2">
                         <label className="text-sm font-medium">所属项目 (Optional)</label>
                         <select
                             className="w-full h-10 px-3 rounded-md border border-input bg-background"
@@ -320,10 +371,10 @@ export function FocusController() {
                         <p className="text-xs text-muted-foreground">
                             * 绑定项目可计入项目投入分布
                         </p>
-                    </div>
+                    </div>}
 
                     {/* Path C: Custom Label (Only if no task/project usually, but can be additive) */}
-                    {!selectedTaskId && !selectedProjectId && (
+                    {!isQuickStartMode && !selectedTaskId && !selectedProjectId && (
                         <div className="space-y-2 animate-slide-in-right">
                             <label className="text-sm font-medium">或 输入专注目标</label>
                             <input
@@ -336,9 +387,22 @@ export function FocusController() {
                         </div>
                     )}
 
+                    {isQuickStartMode && (
+                        <div className="space-y-2 animate-slide-in-right">
+                            <label className="text-sm font-medium text-amber-700">最小启动动作（可选）</label>
+                            <input
+                                type="text"
+                                className="w-full h-10 px-3 rounded-md border border-amber-200 bg-amber-50/40"
+                                placeholder="例如：打开题册、写5分钟代码、整理桌面..."
+                                value={quickStartAction}
+                                onChange={(e) => setQuickStartAction(e.target.value)}
+                            />
+                        </div>
+                    )}
+
                     <button
                         onClick={handleStart}
-                        disabled={!selectedTaskId && !selectedProjectId && !customLabel}
+                        disabled={startDisabled}
                         className="w-full h-12 bg-primary text-primary-foreground font-medium rounded-md hover:bg-primary/90 disabled:opacity-50 transition-colors"
                     >
                         进入专注模式
@@ -352,6 +416,44 @@ export function FocusController() {
                     </button>
                 </div>
             </div>
+
+            {showQuickStartPrompt && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center">
+                    <div
+                        className="absolute inset-0 bg-black/40"
+                        onClick={() => {
+                            setShowQuickStartPrompt(false);
+                            router.push("/dashboard");
+                        }}
+                    />
+                    <div className="relative w-full max-w-sm mx-4 rounded-xl bg-white border border-slate-200 shadow-xl p-5">
+                        <h3 className="text-base font-semibold text-slate-900">本次专注已结束</h3>
+                        <p className="text-sm text-slate-600 mt-2">要现在补录任务吗？</p>
+                        <div className="mt-4 flex gap-3">
+                            <button
+                                className="flex-1 h-10 rounded-md border border-slate-200 hover:bg-slate-50 text-sm"
+                                onClick={() => {
+                                    setShowQuickStartPrompt(false);
+                                    router.push("/dashboard");
+                                }}
+                            >
+                                稍后
+                            </button>
+                            <button
+                                className="flex-1 h-10 rounded-md bg-foreground text-white hover:bg-slate-700 text-sm font-medium"
+                                onClick={() => {
+                                    const taskId = quickStartPromptTaskId;
+                                    setShowQuickStartPrompt(false);
+                                    if (taskId) router.push(`/tasks/${taskId}`);
+                                    else router.push("/tasks");
+                                }}
+                            >
+                                去填写
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

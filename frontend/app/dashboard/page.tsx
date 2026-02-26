@@ -79,6 +79,10 @@ function DashboardContent() {
                                 weekSec={studyStats?.week_total_sec || 0}
                                 distribution={pieData}
                                 allTimeDistribution={allTimePieData}
+                                quickStartTodayCount={studyStats?.quick_start_today_count || 0}
+                                quickStartWeekCount={studyStats?.quick_start_week_count || 0}
+                                quickStartMonthCount={studyStats?.quick_start_month_count || 0}
+                                quickStartAllTimeCount={studyStats?.quick_start_all_time_count || 0}
                             />
                         </div>
 

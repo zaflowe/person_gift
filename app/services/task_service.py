@@ -528,6 +528,8 @@ class TaskService:
             task.title = updates["title"]
         if "description" in updates and updates["description"] is not None:
             task.description = updates["description"]
+        if "quick_start_action" in updates:
+            task.quick_start_action = updates["quick_start_action"]
         if "evidence_type" in updates and updates["evidence_type"] is not None:
             task.evidence_type = updates["evidence_type"]
         if "evidence_criteria" in updates:

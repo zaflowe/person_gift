@@ -15,9 +15,95 @@ interface FocusStudyCardProps {
     weekSec: number;
     distribution: Array<{ name: string; value: number; color?: string; project_id?: string }>;
     allTimeDistribution: Array<{ name: string; value: number; color?: string; project_id?: string }>;
+    quickStartTodayCount?: number;
+    quickStartWeekCount?: number;
+    quickStartMonthCount?: number;
+    quickStartAllTimeCount?: number;
 }
 
-export function FocusStudyCard({ todaySec, weekSec, distribution, allTimeDistribution }: FocusStudyCardProps) {
+function QuickStartTicks({
+    todayCount,
+    weekCount,
+}: {
+    todayCount: number;
+    weekCount: number;
+}) {
+    const todayMax = 6;
+    const weekMax = 36;
+    const weekStepCount = 6;
+    const weekLit = Math.min(Math.floor(weekCount / 6), weekStepCount);
+    const todayDisplay = todayCount > todayMax ? `${todayCount}` : `${todayCount}/${todayMax}`;
+    const weekDisplay = weekCount > weekMax ? `${weekCount}` : `${weekCount}/${weekMax}`;
+
+    const tickStyle = (active: boolean, full: boolean) =>
+        active
+            ? (full ? "bg-amber-400" : "bg-indigo-500")
+            : "bg-slate-200";
+
+    return (
+        <div className="absolute inset-0 pointer-events-none z-20">
+            <div className="absolute top-2 left-1/2 -translate-x-1/2 text-center space-y-0.5">
+                <div className="text-[11px] font-medium text-slate-600">今日快速启动 {todayDisplay}</div>
+                <div className="text-[11px] font-medium text-slate-500">本周快速启动 {weekDisplay}</div>
+            </div>
+
+            <div className="absolute inset-0 flex items-center justify-center">
+                <div className="relative w-[230px] h-[230px]">
+                    {Array.from({ length: todayMax }).map((_, i) => {
+                        const angle = (i / todayMax) * 360 - 90;
+                        const radius = 104;
+                        const x = 115 + Math.cos((angle * Math.PI) / 180) * radius;
+                        const y = 115 + Math.sin((angle * Math.PI) / 180) * radius;
+                        const full = todayCount >= todayMax;
+                        return (
+                            <div
+                                key={`d-${i}`}
+                                className={`absolute w-1 h-5 rounded-full ${tickStyle(i < Math.min(todayCount, todayMax), full)}`}
+                                style={{
+                                    left: x,
+                                    top: y,
+                                    transform: `translate(-50%, -50%) rotate(${angle + 90}deg)`,
+                                    boxShadow: full && i < todayMax ? "0 0 8px rgba(251,191,36,0.45)" : undefined,
+                                }}
+                            />
+                        );
+                    })}
+                    {Array.from({ length: weekStepCount }).map((_, i) => {
+                        const angle = (i / weekStepCount) * 360 - 90 + 30;
+                        const radius = 118;
+                        const x = 115 + Math.cos((angle * Math.PI) / 180) * radius;
+                        const y = 115 + Math.sin((angle * Math.PI) / 180) * radius;
+                        const full = weekCount >= weekMax;
+                        return (
+                            <div
+                                key={`w-${i}`}
+                                className={`absolute w-1.5 h-7 rounded-full ${tickStyle(i < weekLit || weekCount >= weekMax, full)}`}
+                                style={{
+                                    left: x,
+                                    top: y,
+                                    transform: `translate(-50%, -50%) rotate(${angle + 90}deg)`,
+                                    opacity: i < weekLit || weekCount >= weekMax ? 1 : 0.85,
+                                    boxShadow: full ? "0 0 10px rgba(251,191,36,0.55)" : undefined,
+                                }}
+                            />
+                        );
+                    })}
+                </div>
+            </div>
+        </div>
+    );
+}
+
+export function FocusStudyCard({
+    todaySec,
+    weekSec,
+    distribution,
+    allTimeDistribution,
+    quickStartTodayCount = 0,
+    quickStartWeekCount = 0,
+    quickStartMonthCount = 0,
+    quickStartAllTimeCount = 0,
+}: FocusStudyCardProps) {
     const [view, setView] = useState<"week" | "all">("week");
     const todayMin = Math.floor(todaySec / 60);
     const weekMin = Math.floor(weekSec / 60);
@@ -164,7 +250,20 @@ export function FocusStudyCard({ todaySec, weekSec, distribution, allTimeDistrib
             </div>
 
             {/* Chart Area */}
-            <div className="flex-1 min-h-[160px] relative mt-2 mb-4">
+            <div className={`flex-1 min-h-[160px] relative mb-4 ${view === "week" ? "mt-6" : "mt-2"}`}>
+                {view === "week" && (
+                    <QuickStartTicks todayCount={quickStartTodayCount} weekCount={quickStartWeekCount} />
+                )}
+                {view === "all" && (
+                    <div className="absolute top-2 left-1/2 -translate-x-1/2 z-20 flex gap-2 text-[10px]">
+                        <div className="px-2 py-1 rounded-full bg-slate-100 text-slate-700">
+                            本月快速启动 {quickStartMonthCount}
+                        </div>
+                        <div className="px-2 py-1 rounded-full bg-slate-100 text-slate-700">
+                            累计快速启动 {quickStartAllTimeCount}
+                        </div>
+                    </div>
+                )}
                 {/* Center Text */}
                 <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-10">
                     <div className="text-[10px] text-muted-foreground">Top 1</div>
@@ -181,7 +280,7 @@ export function FocusStudyCard({ todaySec, weekSec, distribution, allTimeDistrib
                         <Pie
                             data={chartData}
                             cx="50%"
-                            cy="50%"
+                            cy={view === "week" ? "56%" : "50%"}
                             innerRadius={60} // Adjusted sizing as requested
                             outerRadius={85}
                             paddingAngle={2} // Better breathing room

@@ -48,6 +48,8 @@ def init_db():
         _ensure_tasks_board_lane_columns()
         _ensure_milestone_order_column()
         _ensure_task_milestone_column()
+        _ensure_study_quick_start_columns()
+        _ensure_task_quick_start_columns()
         _backfill_task_time_windows()
         _backfill_milestone_order()
         _dedupe_long_task_generated_tasks()
@@ -187,6 +189,38 @@ def _ensure_task_milestone_column():
             conn.execute(text("ALTER TABLE tasks ADD COLUMN milestone_id VARCHAR"))
         else:
             conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS milestone_id VARCHAR"))
+
+
+def _ensure_study_quick_start_columns():
+    inspector = inspect(engine)
+    if "study_sessions" not in inspector.get_table_names():
+        return
+
+    columns = [col["name"] for col in inspector.get_columns("study_sessions")]
+    with engine.begin() as conn:
+        if "is_quick_start" not in columns:
+            conn.execute(text("ALTER TABLE study_sessions ADD COLUMN is_quick_start BOOLEAN DEFAULT 0"))
+        if "quick_start_action" not in columns:
+            conn.execute(text("ALTER TABLE study_sessions ADD COLUMN quick_start_action VARCHAR"))
+        if "quick_start_valid" not in columns:
+            conn.execute(text("ALTER TABLE study_sessions ADD COLUMN quick_start_valid BOOLEAN DEFAULT 0"))
+        if "quick_start_task_id" not in columns:
+            conn.execute(text("ALTER TABLE study_sessions ADD COLUMN quick_start_task_id VARCHAR"))
+
+
+def _ensure_task_quick_start_columns():
+    inspector = inspect(engine)
+    if "tasks" not in inspector.get_table_names():
+        return
+
+    columns = [col["name"] for col in inspector.get_columns("tasks")]
+    with engine.begin() as conn:
+        if "is_quick_start" not in columns:
+            conn.execute(text("ALTER TABLE tasks ADD COLUMN is_quick_start BOOLEAN DEFAULT 0"))
+        if "quick_start_action" not in columns:
+            conn.execute(text("ALTER TABLE tasks ADD COLUMN quick_start_action TEXT"))
+        if "quick_start_session_id" not in columns:
+            conn.execute(text("ALTER TABLE tasks ADD COLUMN quick_start_session_id VARCHAR"))
 
 
 def _backfill_task_time_windows():
