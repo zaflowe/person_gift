@@ -285,7 +285,7 @@ def _backfill_task_time_windows():
                     "scheduled_date = COALESCE(scheduled_date, :scheduled_time), "
                     "deadline = :deadline, "
                     "duration = COALESCE(duration, :duration), "
-                    "is_time_blocked = 1 "
+                    "is_time_blocked = :is_time_blocked "
                     "WHERE id = :id"
                 ),
                 {
@@ -293,6 +293,7 @@ def _backfill_task_time_windows():
                     "scheduled_time": scheduled_time,
                     "deadline": deadline,
                     "duration": max(int((deadline - scheduled_time).total_seconds() // 60), 1),
+                    "is_time_blocked": True,
                 }
             )
 
