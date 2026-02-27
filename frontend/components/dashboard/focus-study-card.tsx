@@ -4,7 +4,7 @@ import { AppCard } from "@/components/ui/app-card";
 import { Clock, Play } from "lucide-react";
 import { useState } from "react";
 import Link from "next/link";
-import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from "recharts";
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
 import { getProjectColorHex } from "@/lib/project-colors";
 import useSWR from "swr";
 import { fetcher } from "@/lib/utils";
@@ -21,30 +21,29 @@ interface FocusStudyCardProps {
     quickStartAllTimeCount?: number;
 }
 
-function QuickStartTicks({
-    todayCount,
-    weekCount,
-}: {
-    todayCount: number;
-    weekCount: number;
-}) {
+function formatQuickStartCount(count: number, cap: number): string {
+    return count > cap ? `${count}` : `${count}/${cap}`;
+}
+
+function tickColor(active: boolean, full: boolean): string {
+    if (!active) return "bg-slate-200";
+    return full ? "bg-amber-400" : "bg-indigo-500";
+}
+
+function WeekQuickStartOverlay({ todayCount, weekCount }: { todayCount: number; weekCount: number }) {
     const todayMax = 6;
     const weekMax = 36;
     const weekStepCount = 6;
     const weekLit = Math.min(Math.floor(weekCount / 6), weekStepCount);
-    const todayDisplay = todayCount > todayMax ? `${todayCount}` : `${todayCount}/${todayMax}`;
-    const weekDisplay = weekCount > weekMax ? `${weekCount}` : `${weekCount}/${weekMax}`;
-
-    const tickStyle = (active: boolean, full: boolean) =>
-        active
-            ? (full ? "bg-amber-400" : "bg-indigo-500")
-            : "bg-slate-200";
+    const todayLit = Math.min(todayCount, todayMax);
+    const todayFull = todayCount >= todayMax;
+    const weekFull = weekCount >= weekMax;
 
     return (
         <div className="absolute inset-0 pointer-events-none z-20">
             <div className="absolute top-2 left-1/2 -translate-x-1/2 text-center space-y-0.5">
-                <div className="text-[11px] font-medium text-slate-600">今日快速启动 {todayDisplay}</div>
-                <div className="text-[11px] font-medium text-slate-500">本周快速启动 {weekDisplay}</div>
+                <div className="text-[11px] font-medium text-slate-600">今日快速启动 {formatQuickStartCount(todayCount, todayMax)}</div>
+                <div className="text-[11px] font-medium text-slate-500">本周快速启动 {formatQuickStartCount(weekCount, weekMax)}</div>
             </div>
 
             <div className="absolute inset-0 flex items-center justify-center">
@@ -54,16 +53,16 @@ function QuickStartTicks({
                         const radius = 104;
                         const x = 115 + Math.cos((angle * Math.PI) / 180) * radius;
                         const y = 115 + Math.sin((angle * Math.PI) / 180) * radius;
-                        const full = todayCount >= todayMax;
+                        const active = i < todayLit;
                         return (
                             <div
                                 key={`d-${i}`}
-                                className={`absolute w-1 h-5 rounded-full ${tickStyle(i < Math.min(todayCount, todayMax), full)}`}
+                                className={`absolute w-1 h-5 rounded-full ${tickColor(active, todayFull)}`}
                                 style={{
                                     left: x,
                                     top: y,
                                     transform: `translate(-50%, -50%) rotate(${angle + 90}deg)`,
-                                    boxShadow: full && i < todayMax ? "0 0 8px rgba(251,191,36,0.45)" : undefined,
+                                    boxShadow: todayFull && active ? "0 0 8px rgba(251,191,36,0.45)" : undefined,
                                 }}
                             />
                         );
@@ -73,17 +72,59 @@ function QuickStartTicks({
                         const radius = 118;
                         const x = 115 + Math.cos((angle * Math.PI) / 180) * radius;
                         const y = 115 + Math.sin((angle * Math.PI) / 180) * radius;
-                        const full = weekCount >= weekMax;
+                        const active = i < weekLit || weekFull;
                         return (
                             <div
                                 key={`w-${i}`}
-                                className={`absolute w-1.5 h-7 rounded-full ${tickStyle(i < weekLit || weekCount >= weekMax, full)}`}
+                                className={`absolute w-1.5 h-7 rounded-full ${tickColor(active, weekFull)}`}
                                 style={{
                                     left: x,
                                     top: y,
                                     transform: `translate(-50%, -50%) rotate(${angle + 90}deg)`,
-                                    opacity: i < weekLit || weekCount >= weekMax ? 1 : 0.85,
-                                    boxShadow: full ? "0 0 10px rgba(251,191,36,0.55)" : undefined,
+                                    opacity: active ? 1 : 0.85,
+                                    boxShadow: weekFull && active ? "0 0 10px rgba(251,191,36,0.55)" : undefined,
+                                }}
+                            />
+                        );
+                    })}
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function MonthQuickStartOverlay({ monthCount, allTimeCount }: { monthCount: number; allTimeCount: number }) {
+    const monthStep = 18;
+    const monthMax = 108;
+    const monthTicks = 6;
+    const monthLit = Math.min(Math.floor(monthCount / monthStep), monthTicks);
+    const monthFull = monthCount >= monthMax;
+
+    return (
+        <div className="absolute inset-0 pointer-events-none z-20">
+            <div className="absolute top-2 left-1/2 -translate-x-1/2 flex gap-2 text-[10px]">
+                <div className="px-2 py-1 rounded-full bg-slate-100 text-slate-700">本月快速启动 {monthCount}</div>
+                <div className="px-2 py-1 rounded-full bg-slate-100 text-slate-700">累计快速启动 {allTimeCount}</div>
+            </div>
+
+            <div className="absolute inset-0 flex items-center justify-center">
+                <div className="relative w-[230px] h-[230px]">
+                    {Array.from({ length: monthTicks }).map((_, i) => {
+                        const angle = (i / monthTicks) * 360 - 90;
+                        const radius = 118;
+                        const x = 115 + Math.cos((angle * Math.PI) / 180) * radius;
+                        const y = 115 + Math.sin((angle * Math.PI) / 180) * radius;
+                        const active = i < monthLit || monthFull;
+                        return (
+                            <div
+                                key={`m-${i}`}
+                                className={`absolute w-1.5 h-7 rounded-full ${tickColor(active, monthFull)}`}
+                                style={{
+                                    left: x,
+                                    top: y,
+                                    transform: `translate(-50%, -50%) rotate(${angle + 90}deg)`,
+                                    opacity: active ? 1 : 0.85,
+                                    boxShadow: monthFull && active ? "0 0 10px rgba(251,191,36,0.55)" : undefined,
                                 }}
                             />
                         );
@@ -105,57 +146,46 @@ export function FocusStudyCard({
     quickStartAllTimeCount = 0,
 }: FocusStudyCardProps) {
     const [view, setView] = useState<"week" | "all">("week");
-    const todayMin = Math.floor(todaySec / 60);
-    const weekMin = Math.floor(weekSec / 60);
+    const _todayMin = Math.floor(todaySec / 60);
+    const _weekMin = Math.floor(weekSec / 60);
 
     const { data: projects } = useSWR<Project[]>("/api/projects", fetcher);
 
-    // 1. Unified Data Source: Calculate total from distribution
-    // Ensure we handle potential empty or malformed data gracefully
     const validDistribution = (view === "week" ? distribution : allTimeDistribution) || [];
-
-    // Use raw seconds for precision
-    const calculatedTotalSeconds = validDistribution.reduce((acc, curr) => acc + (curr.value || 0), 0);
-
-    // Use calculated total for display to ensure consistency
-    const displayTotalSeconds = calculatedTotalSeconds;
+    const displayTotalSeconds = validDistribution.reduce((acc, curr) => acc + (curr.value || 0), 0);
     const hasData = displayTotalSeconds > 0;
 
-    // Calculate percentages and prepare chart data with colors
-    const chartData = validDistribution.map(entry => {
-        let isStrategic = false;
-        let strategicIndex = -1;
-        let customColor = undefined;
+    const chartData = validDistribution
+        .map((entry) => {
+            let isStrategic = false;
+            let strategicIndex = -1;
+            let customColor = undefined;
 
-        if (entry.project_id && projects) {
-            const project = projects.find(p => p.id === entry.project_id);
-            if (project) {
-                // Check strategic status from project list, or use logic if needed
-                // The project object from API has is_strategic
-                const activeProjects = projects.filter(p => p.status !== 'SUCCESS' && p.status !== 'FAILURE');
-                const strategicList = activeProjects.slice(0, 3);
+            if (entry.project_id && projects) {
+                const project = projects.find((p) => p.id === entry.project_id);
+                if (project) {
+                    const activeProjects = projects.filter((p) => p.status !== "SUCCESS" && p.status !== "FAILURE");
+                    const strategicList = activeProjects.slice(0, 3);
 
-                isStrategic = strategicList.some(sp => sp.id === entry.project_id);
-                strategicIndex = strategicList.findIndex(sp => sp.id === entry.project_id);
-                customColor = project.color;
+                    isStrategic = strategicList.some((sp) => sp.id === entry.project_id);
+                    strategicIndex = strategicList.findIndex((sp) => sp.id === entry.project_id);
+                    customColor = project.color;
+                }
             }
-        }
 
-        const colorKey = entry.project_id || entry.name;
-        // Use updated color logic with custom color support
-        const fill = getProjectColorHex(colorKey, isStrategic, strategicIndex, customColor);
+            const colorKey = entry.project_id || entry.name;
+            const fill = getProjectColorHex(colorKey, isStrategic, strategicIndex, customColor);
 
-        return {
-            ...entry,
-            fill,
-            // 2. Correct Percentage: (value / total) * 100
-            percentage: displayTotalSeconds > 0 ? Math.round((entry.value / displayTotalSeconds) * 100) : 0
-        };
-    }).sort((a, b) => b.value - a.value); // Sort for Top 1
+            return {
+                ...entry,
+                fill,
+                percentage: displayTotalSeconds > 0 ? Math.round((entry.value / displayTotalSeconds) * 100) : 0,
+            };
+        })
+        .sort((a, b) => b.value - a.value);
 
     const topProject = chartData[0];
 
-    // Empty State
     if (!hasData) {
         return (
             <AppCard className="flex flex-col gap-4 h-full" noPadding>
@@ -207,7 +237,6 @@ export function FocusStudyCard({
 
     return (
         <AppCard className="flex flex-col h-full" noPadding>
-            {/* Header */}
             <div className="px-5 pt-5 pb-2 flex items-center justify-between">
                 <div className="flex items-center gap-3">
                     <div className="p-2 bg-indigo-50 rounded-full text-indigo-600">
@@ -249,29 +278,21 @@ export function FocusStudyCard({
                 </div>
             </div>
 
-            {/* Chart Area */}
-            <div className={`flex-1 min-h-[160px] relative mb-4 ${view === "week" ? "mt-6" : "mt-2"}`}>
+            <div className={`flex-1 min-h-[170px] relative mb-4 ${view === "week" ? "mt-6" : "mt-2"}`}>
                 {view === "week" && (
-                    <QuickStartTicks todayCount={quickStartTodayCount} weekCount={quickStartWeekCount} />
+                    <WeekQuickStartOverlay todayCount={quickStartTodayCount} weekCount={quickStartWeekCount} />
                 )}
                 {view === "all" && (
-                    <div className="absolute top-2 left-1/2 -translate-x-1/2 z-20 flex gap-2 text-[10px]">
-                        <div className="px-2 py-1 rounded-full bg-slate-100 text-slate-700">
-                            本月快速启动 {quickStartMonthCount}
-                        </div>
-                        <div className="px-2 py-1 rounded-full bg-slate-100 text-slate-700">
-                            累计快速启动 {quickStartAllTimeCount}
-                        </div>
-                    </div>
+                    <MonthQuickStartOverlay monthCount={quickStartMonthCount} allTimeCount={quickStartAllTimeCount} />
                 )}
-                {/* Center Text */}
+
                 <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-10">
                     <div className="text-[10px] text-muted-foreground">Top 1</div>
                     <div className="text-xs font-bold text-slate-800 max-w-[80px] truncate text-center px-1">
-                        {topProject ? topProject.name : '--'}
+                        {topProject ? topProject.name : "--"}
                     </div>
                     <div className="text-[10px] font-mono text-slate-500">
-                        {topProject ? `${topProject.percentage}%` : '0%'}
+                        {topProject ? `${topProject.percentage}%` : "0%"}
                     </div>
                 </div>
 
@@ -280,10 +301,10 @@ export function FocusStudyCard({
                         <Pie
                             data={chartData}
                             cx="50%"
-                            cy={view === "week" ? "56%" : "50%"}
-                            innerRadius={60} // Adjusted sizing as requested
+                            cy="50%"
+                            innerRadius={60}
                             outerRadius={85}
-                            paddingAngle={2} // Better breathing room
+                            paddingAngle={2}
                             cornerRadius={4}
                             dataKey="value"
                             stroke="none"
@@ -293,11 +314,15 @@ export function FocusStudyCard({
                             ))}
                         </Pie>
                         <Tooltip
-                            wrapperStyle={{ outline: 'none', zIndex: 50 }} // FIX: Ensure tooltip is above interactions
-                            contentStyle={{ backgroundColor: 'white', borderColor: '#e2e8f0', borderRadius: '8px', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                            itemStyle={{ color: '#1e293b', fontSize: '12px' }}
-                            formatter={(value: any, name: any, props: any) => {
-                                // Value is in seconds now. Format to m:s or just m
+                            wrapperStyle={{ outline: "none", zIndex: 50 }}
+                            contentStyle={{
+                                backgroundColor: "white",
+                                borderColor: "#e2e8f0",
+                                borderRadius: "8px",
+                                boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)",
+                            }}
+                            itemStyle={{ color: "#1e293b", fontSize: "12px" }}
+                            formatter={(value: any, _name: any, props: any) => {
                                 const m = Math.floor(value / 60);
                                 const s = value % 60;
                                 return [`${m}m ${s}s (${props.payload.percentage}%)`, props.payload.name];
@@ -307,21 +332,18 @@ export function FocusStudyCard({
                 </ResponsiveContainer>
             </div>
 
-            {/* Custom Legend */}
             <div className="px-4 pb-4 grid grid-cols-2 gap-x-2 gap-y-1 relative z-20">
-                {chartData.slice(0, 4).map((item, i) => ( // Limit to top 4 for cleanliness
+                {chartData.slice(0, 4).map((item, i) => (
                     <div key={i} className="flex items-center gap-1.5 text-xs text-slate-600 mb-1" title={item.name}>
                         <div className="w-2 h-2 rounded-full flex-none" style={{ backgroundColor: item.fill }} />
                         <div className="flex-1 truncate max-w-[6rem]">
-                            {item.name.length > 8 ? item.name.substring(0, 8) + '...' : item.name}
+                            {item.name.length > 8 ? `${item.name.substring(0, 8)}...` : item.name}
                         </div>
                         <div className="font-mono text-[10px] text-slate-400">{item.percentage}%</div>
                     </div>
                 ))}
                 {chartData.length > 4 && (
-                    <div className="text-[10px] text-slate-400 pl-3.5 self-center">
-                        +{chartData.length - 4}
-                    </div>
+                    <div className="text-[10px] text-slate-400 pl-3.5 self-center">+{chartData.length - 4}</div>
                 )}
             </div>
         </AppCard>
