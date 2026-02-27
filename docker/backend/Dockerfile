@@ -24,5 +24,5 @@ COPY app ./app
 EXPOSE 8000
 
 # Run with Gunicorn (Production)
-# 4 Workers is a safe default for a 2 vCPU machine.
-CMD ["gunicorn", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "app.main:app", "--bind", "0.0.0.0:8000"]
+# Increase timeout to avoid upstream 502 when AI provider response is slow.
+CMD ["gunicorn", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "app.main:app", "--bind", "0.0.0.0:8000", "--timeout", "180", "--graceful-timeout", "30", "--keep-alive", "5"]
