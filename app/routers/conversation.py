@@ -645,9 +645,8 @@ async def login_greeting(
     db: Session = Depends(get_db)
 ):
     """
-    Inject a random, data-driven greeting message on each login.
+    Inject one AI-generated greeting message at login.
     """
-    # Get or create conversation session
     session = db.query(ConversationSession).filter(
         ConversationSession.user_id == current_user.id
     ).order_by(ConversationSession.created_at.desc()).first()
@@ -665,7 +664,6 @@ async def login_greeting(
 
     messages = json.loads(session.messages) if session.messages else []
 
-    # Gather lightweight stats
     open_statuses = ["OPEN", "EVIDENCE_SUBMITTED", "OVERDUE"]
     open_count = db.query(Task).outerjoin(Project, Task.project_id == Project.id).filter(
         Task.user_id == current_user.id,
@@ -697,24 +695,28 @@ async def login_greeting(
 
     next_task_title = next_task.title if next_task else None
 
-    templates = [
-        "今天也见到你了。待办 {open} 项，逾期 {overdue} 项。先动一个最小任务就能破局。",
-        "你的习惯 {habits} 个、固定时间块 {fixed} 个，节奏已经在了。",
-        "当前项目 {projects} 个在推进。小步快走就能赢。",
-        "我随便说一句：别等完美，先做 10 分钟。待办 {open} 项在排队。",
-    ]
-
-    if next_task_title:
-        templates.append(f"最近截止的任务是「{next_task_title}」，先把它处理掉会很爽。")
-
-    import random
-    message_text = random.choice(templates).format(
-        open=open_count,
-        overdue=overdue_count,
-        habits=habits_count,
-        fixed=fixed_count,
-        projects=active_projects
+    prompt = (
+        "You are 'Yan Yan'. Generate one login greeting in Chinese.\n"
+        "Constraints: 1-2 short sentences, conversational, no bullet list, no fixed template, "
+        "at most one emoji, include a lightweight action suggestion.\n"
+        f"Open tasks: {open_count}\n"
+        f"Overdue tasks: {overdue_count}\n"
+        f"Habits: {habits_count}\n"
+        f"Fixed blocks: {fixed_count}\n"
+        f"Active projects: {active_projects}\n"
+        f"Nearest deadline task: {next_task_title or 'none'}"
     )
+
+    try:
+        message_text = conversation_service._call_ai(prompt).strip()
+        if not message_text:
+            raise ValueError("empty greeting from ai")
+    except Exception as e:
+        logger.warning(f"AI login greeting failed, fallback to plain message: {e}")
+        if next_task_title:
+            message_text = f"欢迎回来。先从「{next_task_title}」开始，今天会顺很多。"
+        else:
+            message_text = f"欢迎回来。你现在有 {open_count} 个待办，先做一个最小动作。"
 
     new_msg = {
         "role": "assistant",

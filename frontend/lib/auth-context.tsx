@@ -4,6 +4,7 @@ import { createContext, useContext, useState, useEffect, ReactNode, useCallback 
 import { useRouter } from "next/navigation";
 import { User } from "@/types";
 import { getToken, setToken as saveToken, clearToken, fetcher, apiPost } from "@/lib/utils";
+import { requestLoginGreeting } from "@/lib/api/conversation";
 
 interface AuthContextValue {
     user: User | null;
@@ -57,6 +58,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const data = await apiPost<{ access_token: string, token_type: string }>("/api/auth/login", formData);
         saveToken(data.access_token);
         await fetchUser();
+
+        // Inject one greeting at login-time only.
+        try {
+            await requestLoginGreeting(data.access_token);
+        } catch (error) {
+            console.error("Login greeting failed", error);
+        }
+
         router.push("/dashboard");
     };
 

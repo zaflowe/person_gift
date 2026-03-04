@@ -94,6 +94,18 @@ class HabitService:
             return 0
 
         for task in to_delete:
+            from app.models.study import StudySession
+            from app.models.metric import MetricEntry
+            
+            db.query(StudySession).filter(StudySession.task_id == task.id).update(
+                {"task_id": None}, synchronize_session=False
+            )
+            db.query(StudySession).filter(StudySession.quick_start_task_id == task.id).update(
+                {"quick_start_task_id": None}, synchronize_session=False
+            )
+            db.query(MetricEntry).filter(MetricEntry.task_id == task.id).update(
+                {"task_id": None}, synchronize_session=False
+            )
             db.delete(task)
         db.commit()
         logger.warning("Deduplicated %s duplicate habit-generated tasks", len(to_delete))

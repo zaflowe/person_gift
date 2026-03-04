@@ -199,6 +199,22 @@ def generate_project_long_tasks():
         db.close()
 
 
+def run_daily_reminders_job():
+    """
+    Run daily reminders with distributed lock to avoid multi-worker duplication.
+    """
+    db = SessionLocal()
+    try:
+        if not acquire_job_lock(db, "daily_reminder_job", lock_duration_minutes=30):
+            logger.info("Skipping daily reminder job - already running")
+            return
+        process_all_daily_reminders()
+    except Exception as e:
+        logger.error(f"Error in daily reminder job: {e}")
+    finally:
+        db.close()
+
+
 def start_scheduler():
     """Start the background scheduler."""
     # Weekly task generation: Monday 00:05 Asia/Taipei
@@ -229,7 +245,7 @@ def start_scheduler():
     
     # Daily Reminder: Every day at 09:00
     scheduler.add_job(
-        process_all_daily_reminders,
+        run_daily_reminders_job,
         trigger=CronTrigger(
             hour=9,
             minute=0,

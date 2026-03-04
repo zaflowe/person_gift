@@ -23,7 +23,6 @@ from app.routers import (
     metrics,
     study,
     dashboard_v2,
-    reminder_inject,
     habits,
     project_long_tasks,
 )
@@ -103,7 +102,6 @@ app.include_router(metrics.router)
 app.include_router(study.router)
 app.include_router(dashboard_v2.router)
 # app.include_router(system_tasks.router) # Removed duplicate
-app.include_router(reminder_inject.router)
 app.include_router(habits.router)
 app.include_router(project_long_tasks.router)
 

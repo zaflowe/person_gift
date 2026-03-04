@@ -1,9 +1,12 @@
 import logging
 import uuid
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+import json
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 
+from app.config import settings
 from app.models.user import User
 from app.models.task import Task
 from app.models.project import Project
@@ -101,47 +104,69 @@ def generate_daily_reminder_content(db: Session, user: User) -> str:
     return "\n".join(lines)
 
 
-def inject_daily_reminder_for_user(db: Session, user: User):
-    """Inject reminder into user's conversation."""
+def _has_daily_reminder_for_local_date(history: list, timezone_name: str) -> bool:
+    """Return True if a daily reminder already exists for today in local timezone."""
+    tz = ZoneInfo(timezone_name)
+    today_local = datetime.now(tz).date()
+
+    for msg in reversed(history):
+        if msg.get("type") != "daily_reminder":
+            continue
+        ts = msg.get("timestamp")
+        if not ts:
+            continue
+        try:
+            dt = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+        except Exception:
+            continue
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=ZoneInfo("UTC"))
+        if dt.astimezone(tz).date() == today_local:
+            return True
+    return False
+
+
+def inject_daily_reminder_for_user(db: Session, user: User) -> bool:
+    """Inject reminder into user's conversation; returns True if inserted."""
     content = generate_daily_reminder_content(db, user)
-    
-    # Get active session
+
     session = db.query(ConversationSession).filter(
         ConversationSession.user_id == user.id
     ).order_by(ConversationSession.created_at.desc()).first()
-    
+
     if not session:
         session = ConversationSession(
             id=str(uuid.uuid4()),
             user_id=user.id,
-            status="active",
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow()
+            stage="intent",
+            messages="[]",
+            collected_info="{}"
         )
         db.add(session)
         db.commit()
-    
-    # Init history
-    import json
+
     history = []
     if session.messages:
         try:
             history = json.loads(session.messages)
-        except:
+        except Exception:
             history = []
-        
-    # Append message
+
+    if _has_daily_reminder_for_local_date(history, settings.timezone):
+        logger.info(f"Skip daily reminder for user {user.id}: already sent today")
+        return False
+
     history.append({
         "role": "assistant",
         "content": content,
         "timestamp": datetime.utcnow().isoformat(),
         "type": "daily_reminder"
     })
-    
+
     session.messages = json.dumps(history, ensure_ascii=False)
-    
     db.commit()
     logger.info(f"Injected daily reminder for user {user.id}")
+    return True
 
 
 def process_all_daily_reminders():
@@ -149,10 +174,13 @@ def process_all_daily_reminders():
     db = SessionLocal()
     try:
         users = db.query(User).all()
+        inserted = 0
         for user in users:
             try:
-                inject_daily_reminder_for_user(db, user)
+                if inject_daily_reminder_for_user(db, user):
+                    inserted += 1
             except Exception as e:
                 logger.error(f"Error injecting reminder for user {user.id}: {e}")
+        logger.info(f"Daily reminder job completed: {inserted}/{len(users)} inserted")
     finally:
         db.close()

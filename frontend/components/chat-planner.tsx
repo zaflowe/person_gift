@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { MessageCircle, X, Send, Loader2, RotateCcw } from "lucide-react";
 import { AppCard } from "@/components/ui/app-card";
 import { getToken, cn, fetcher, apiPost, API_BASE_URL } from "@/lib/utils";
-import { sendChatMessage, requestLoginGreeting } from "@/lib/api/conversation";
+import { sendChatMessage } from "@/lib/api/conversation";
 import { commitPlan } from "@/lib/api/planner";
 import { createQuickTask } from "@/lib/api/tasks";
 
@@ -180,16 +180,6 @@ export default function ChatPlanner({ embedded = false, className }: { embedded?
                         }
                     } catch {
                         // Ignore if no plan found
-                    }
-                }
-
-                // Inject a random greeting on each login/open
-                if (token) {
-                    try {
-                        const greeting = await requestLoginGreeting(token);
-                        setMessages(prev => [...prev, greeting.message]);
-                    } catch {
-                        // Non-blocking
                     }
                 }
             } catch (e) {

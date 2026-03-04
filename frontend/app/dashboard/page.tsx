@@ -1,10 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import { RequireAuth } from "@/lib/auth-context";
 import { AppLayout } from "@/components/layout/app-layout";
 import useSWR from "swr";
-import { fetcher, apiPost } from "@/lib/utils";
+import { fetcher } from "@/lib/utils";
 import ChatPlanner from "@/components/chat-planner";
 import { FocusStudyCard } from "@/components/dashboard/focus-study-card";
 import { StrategicProjectsCard } from "@/components/dashboard/strategic-projects-card";
@@ -23,41 +22,6 @@ export default function DashboardPage() {
 function DashboardContent() {
     // 1. Data Fetching for Focus Card
     const { data: studyStats } = useSWR<any>("/api/study/stats", fetcher);
-
-    // 2. Daily Reminder Logic
-    const [chatKey, setChatKey] = useState(0);
-
-    useEffect(() => {
-        const checkAndInjectReminder = async () => {
-            const today = new Date().toISOString().split('T')[0];
-            const lastReminderDate = localStorage.getItem("lastReminderDate");
-
-            if (lastReminderDate !== today) {
-                try {
-                    // 1. Check weekly system task (backend will create if missing)
-                    await apiPost("/api/system-tasks/weekly-check", {});
-
-                    // 2. Fetch reminder data
-                    const reminderData = await fetcher("/dashboard/daily-reminder-data");
-
-                    // 3. Inject message
-                    await apiPost("/conversation/inject-reminder", { data: reminderData });
-
-                    // 4. Update local storage
-                    localStorage.setItem("lastReminderDate", today);
-
-                    // 5. Refresh ChatPlanner to show new message
-                    setChatKey(prev => prev + 1);
-
-                    console.log("Daily reminder injected successfully");
-                } catch (e) {
-                    console.error("Failed to inject daily reminder", e);
-                }
-            }
-        };
-
-        checkAndInjectReminder();
-    }, []);
 
     const pieData = studyStats?.distribution || [];
     const allTimePieData = studyStats?.all_time_distribution || [];
@@ -102,7 +66,7 @@ function DashboardContent() {
                 {/* Right Panel: ChatPlanner (6 cols) */}
                 <div className="lg:col-span-6 h-full min-h-0 relative">
                     <div className="absolute inset-0 border border-[var(--border)] shadow-sm rounded-[var(--radius)] bg-[var(--surface)] overflow-hidden">
-                        <ChatPlanner embedded={true} className="h-full w-full" key={chatKey} />
+                        <ChatPlanner embedded={true} className="h-full w-full" />
                     </div>
                 </div>
 

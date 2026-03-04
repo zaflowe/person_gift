@@ -327,23 +327,20 @@ def _dedupe_long_task_generated_tasks():
         return
 
     with engine.begin() as conn:
-        conn.execute(text("""
-            DELETE FROM tasks
-            WHERE id IN (
-                SELECT id FROM (
-                    SELECT
-                        id,
-                        ROW_NUMBER() OVER (
-                            PARTITION BY long_task_template_id, generated_for_date
-                            ORDER BY created_at ASC, id ASC
-                        ) AS rn
-                    FROM tasks
-                    WHERE long_task_template_id IS NOT NULL
-                      AND generated_for_date IS NOT NULL
-                ) ranked
-                WHERE ranked.rn > 1
-            )
-        """))
+        subquery = """
+            SELECT id FROM (
+                SELECT id, ROW_NUMBER() OVER (
+                    PARTITION BY long_task_template_id, generated_for_date
+                    ORDER BY created_at ASC, id ASC
+                ) AS rn
+                FROM tasks
+                WHERE long_task_template_id IS NOT NULL AND generated_for_date IS NOT NULL
+            ) ranked WHERE ranked.rn > 1
+        """
+        conn.execute(text(f"UPDATE study_sessions SET task_id = NULL WHERE task_id IN ({subquery})"))
+        conn.execute(text(f"UPDATE study_sessions SET quick_start_task_id = NULL WHERE quick_start_task_id IN ({subquery})"))
+        conn.execute(text(f"UPDATE metric_entries SET task_id = NULL WHERE task_id IN ({subquery})"))
+        conn.execute(text(f"DELETE FROM tasks WHERE id IN ({subquery})"))
 
 
 def _dedupe_habit_generated_tasks():
@@ -352,23 +349,20 @@ def _dedupe_habit_generated_tasks():
         return
 
     with engine.begin() as conn:
-        conn.execute(text("""
-            DELETE FROM tasks
-            WHERE id IN (
-                SELECT id FROM (
-                    SELECT
-                        id,
-                        ROW_NUMBER() OVER (
-                            PARTITION BY template_id, generated_for_date
-                            ORDER BY created_at ASC, id ASC
-                        ) AS rn
-                    FROM tasks
-                    WHERE template_id IS NOT NULL
-                      AND generated_for_date IS NOT NULL
-                ) ranked
-                WHERE ranked.rn > 1
-            )
-        """))
+        subquery = """
+            SELECT id FROM (
+                SELECT id, ROW_NUMBER() OVER (
+                    PARTITION BY template_id, generated_for_date
+                    ORDER BY created_at ASC, id ASC
+                ) AS rn
+                FROM tasks
+                WHERE template_id IS NOT NULL AND generated_for_date IS NOT NULL
+            ) ranked WHERE ranked.rn > 1
+        """
+        conn.execute(text(f"UPDATE study_sessions SET task_id = NULL WHERE task_id IN ({subquery})"))
+        conn.execute(text(f"UPDATE study_sessions SET quick_start_task_id = NULL WHERE quick_start_task_id IN ({subquery})"))
+        conn.execute(text(f"UPDATE metric_entries SET task_id = NULL WHERE task_id IN ({subquery})"))
+        conn.execute(text(f"DELETE FROM tasks WHERE id IN ({subquery})"))
 
 
 def _ensure_long_task_daily_unique_index():

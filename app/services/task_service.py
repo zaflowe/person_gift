@@ -198,7 +198,20 @@ class TaskService:
             return 0
 
         for task in stale_tasks:
+            from app.models.study import StudySession
+            from app.models.metric import MetricEntry
+            
+            db.query(StudySession).filter(StudySession.task_id == task.id).update(
+                {"task_id": None}, synchronize_session=False
+            )
+            db.query(StudySession).filter(StudySession.quick_start_task_id == task.id).update(
+                {"quick_start_task_id": None}, synchronize_session=False
+            )
+            db.query(MetricEntry).filter(MetricEntry.task_id == task.id).update(
+                {"task_id": None}, synchronize_session=False
+            )
             db.delete(task)
+            
         db.commit()
         logger.info("Deleted %s stale unfinished recurring-generated task(s)", len(stale_tasks))
         return len(stale_tasks)

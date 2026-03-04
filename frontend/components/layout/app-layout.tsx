@@ -19,20 +19,14 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     const pathname = usePathname();
     const { user, logout } = useAuth();
 
-    // Check for daily reminder on mount/login
+    // Run lightweight weekly system task check on login/mount.
     useEffect(() => {
         if (user) {
-            const checkReminderAndSystemTasks = async () => {
+            const checkSystemTasks = async () => {
                 const token = localStorage.getItem("token") || localStorage.getItem("auth_token");
                 if (!token) return;
                 try {
-                    // 1. Check Daily Reminder
-                    await fetch(`${API_BASE_URL}/conversation/check-reminder`, {
-                        method: "POST",
-                        headers: { Authorization: `Bearer ${token}` }
-                    });
-
-                    // 2. Check Weekly System Tasks (Global Trigger)
+                    // Check weekly system tasks (global trigger).
                     await fetch(`${API_BASE_URL}/system-tasks/weekly-check`, {
                         method: "POST",
                         headers: { Authorization: `Bearer ${token}` }
@@ -41,7 +35,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                     console.error("Global checks failed", e);
                 }
             };
-            checkReminderAndSystemTasks();
+            checkSystemTasks();
         }
     }, [user]);
 
