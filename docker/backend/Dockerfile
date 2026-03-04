@@ -26,4 +26,4 @@ EXPOSE 8000
 
 # Run with Gunicorn (Production)
 # Increase timeout to avoid upstream 502 when AI provider response is slow.
-CMD ["gunicorn", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "app.main:app", "--bind", "0.0.0.0:8000", "--timeout", "180", "--graceful-timeout", "30", "--keep-alive", "5"]
+CMD ["gunicorn", "-w", "2", "-k", "uvicorn.workers.UvicornWorker", "app.main:app", "--bind", "0.0.0.0:8000", "--timeout", "180", "--graceful-timeout", "30", "--keep-alive", "5"]
