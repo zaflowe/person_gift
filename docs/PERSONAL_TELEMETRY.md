@@ -102,6 +102,35 @@ PUT /api/telemetry/state/current_project
 
 V1 内置简单中文交易规则，可识别常见付款、退款、收款和金额文本。解析结果不是最终真相，原始通知始终保留。
 
+## MCP server（GPT 接入）
+
+backend 内嵌了一个 MCP 适配层，挂载在 `/mcp`（公网入口 `https://YOUR_DOMAIN/mcp/`）。它只是现有 telemetry REST API 的薄包装，不引入新的数据库或服务。
+
+暴露的 tools：
+
+| Tool | 对应 REST | 用途 |
+|---|---|---|
+| `get_context` | GET /telemetry/context | GPT 默认第一读：状态 + 重要备注 + 近期事件 + 最新指标 |
+| `get_today` | GET /telemetry/today | 当天摘要与已识别消费 |
+| `search_life` | GET /telemetry/search | 搜索备注与原始事件 |
+| `get_state` | GET /telemetry/state | 读取当前状态 |
+| `update_state` | PUT /telemetry/state/{key} | 更新当前状态 |
+| `add_life_note` | POST /telemetry/notes | 保存长期语义信息 |
+| `get_metrics` | GET /telemetry/metrics | 查询时间序列 |
+| `add_metric` | POST /telemetry/metrics | 写入指标 |
+
+认证：MCP endpoint 要求 `Authorization: Bearer $TELEMETRY_AGENT_KEY`。key 只存在于服务端环境变量，不会返回给客户端、写进日志或进入前端。适配层通过回环地址调用本容器的 REST API（可用 `TELEMETRY_BASE_URL` 覆盖），并使用异步 HTTP，避免多 worker 下自调用阻塞。
+
+验证（部署后）：
+
+```bash
+python scripts/smoke_mcp.py --base-url https://YOUR_DOMAIN --agent-key YOUR_TELEMETRY_AGENT_KEY
+```
+
+应输出 4 项全部 PASS（无认证 401、initialize、tools/list、真实调用 get_today）。
+
+ChatGPT 侧的具体接法见 `docs/GPT_PLUGIN_SETUP.md`。
+
 ## 部署
 
 服务器拉取功能分支后：
@@ -111,6 +140,8 @@ V1 内置简单中文交易规则，可识别常见付款、退款、收款和�
 # 在已有 .env 中加入 TELEMETRY_INGEST_KEY / TELEMETRY_AGENT_KEY
 docker compose up -d --build backend caddy
 ```
+
+注意：仓库里的 `Caddyfile` 已包含 `/mcp*` 路由。如果生产服务器用的是另一份带真实域名的 Caddyfile，需要把同样的 `handle /mcp*` 块同步过去，否则 MCP endpoint 会被转发到 frontend。
 
 检查：
 

@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 
 from app.database import init_db
 from app.services.scheduler import start_scheduler, stop_scheduler
@@ -27,6 +27,7 @@ from app.routers import (
     project_long_tasks,
 )
 from app.routers import telemetry
+from app.mcp_server import build_mcp_app, mcp as telemetry_mcp
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +37,10 @@ async def lifespan(app: FastAPI):
     logger.info("Application startup: Initializing database and starting scheduler...")
     init_db()
     start_scheduler()
-    yield
+    # Mounted sub-apps do not run their own lifespan, so the MCP session
+    # manager's task group must be started here.
+    async with telemetry_mcp.session_manager.run():
+        yield
     logger.info("Application shutdown: Stopping scheduler...")
     stop_scheduler()
 
@@ -115,6 +119,16 @@ app.include_router(habits.router, prefix="/api")
 app.include_router(project_long_tasks.router, prefix="/api")
 app.include_router(dashboard_v2.router, prefix="/api")
 app.include_router(telemetry.router, prefix="/api")
+
+
+# MCP adapter for GPT access to Personal Telemetry. Bare /mcp redirects to the
+# canonical /mcp/ endpoint; the mount itself enforces the agent key.
+@app.api_route("/mcp", methods=["GET", "POST"], include_in_schema=False)
+def mcp_trailing_slash():
+    return RedirectResponse(url="/mcp/", status_code=307)
+
+
+app.mount("/mcp", build_mcp_app())
 
 
 @app.get("/")
