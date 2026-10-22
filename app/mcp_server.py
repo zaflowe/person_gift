@@ -21,6 +21,7 @@ from typing import Any, Optional
 
 import httpx
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 from starlette.responses import JSONResponse
 
 from app.config import settings
@@ -30,6 +31,19 @@ from app.config import settings
 # with TELEMETRY_BASE_URL only if it is ever split into its own service.
 TELEMETRY_BASE_URL = os.environ.get("TELEMETRY_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
 
+
+def _transport_security() -> TransportSecuritySettings:
+    """Trust configured public hosts while keeping DNS rebinding checks on."""
+    def configured(name: str) -> list[str]:
+        return [value.strip() for value in os.environ.get(name, "").split(",") if value.strip()]
+
+    return TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=["127.0.0.1:*", "localhost:*", "[::1]:*"] + configured("MCP_ALLOWED_HOSTS"),
+        allowed_origins=["http://127.0.0.1:*", "http://localhost:*", "http://[::1]:*"]
+        + configured("MCP_ALLOWED_ORIGINS"),
+    )
+
 # stateless_http: the backend runs multiple gunicorn workers, so MCP sessions
 # must not be pinned to one process. json_response keeps replies as plain JSON
 # for maximum client compatibility.
@@ -38,6 +52,7 @@ mcp = FastMCP(
     streamable_http_path="/",
     stateless_http=True,
     json_response=True,
+    transport_security=_transport_security(),
 )
 
 

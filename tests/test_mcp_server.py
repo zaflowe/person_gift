@@ -1,9 +1,45 @@
 """Tests for the Personal Telemetry MCP adapter."""
 import asyncio
+import pytest
+from mcp.server.fastmcp import FastMCP
+from starlette.testclient import TestClient
 
 import app.mcp_server as mcp_server
 from app.mcp_server import AgentKeyAuthMiddleware, mcp
 from app.config import settings
+
+
+@pytest.mark.parametrize(
+    "host,origin,expected_status",
+    [
+        ("telemetry.example.com", None, 200),
+        ("untrusted.example.com", None, 421),
+        ("telemetry.example.com", "https://untrusted.example.com", 403),
+    ],
+)
+def test_public_transport_keeps_host_and_origin_checks(monkeypatch, host, origin, expected_status):
+    monkeypatch.setenv("MCP_ALLOWED_HOSTS", "telemetry.example.com, telemetry.example.com:443")
+    monkeypatch.setenv("MCP_ALLOWED_ORIGINS", "https://telemetry.example.com")
+    monkeypatch.setattr(settings, "telemetry_agent_key", "test-agent-key")
+    server = FastMCP(
+        "transport-test", streamable_http_path="/", stateless_http=True,
+        json_response=True, transport_security=mcp_server._transport_security(),
+    )
+    headers = {
+        "Authorization": "Bearer test-agent-key",
+        "Accept": "application/json, text/event-stream",
+    }
+    if origin:
+        headers["Origin"] = origin
+    with TestClient(AgentKeyAuthMiddleware(server.streamable_http_app()), base_url=f"https://{host}") as client:
+        response = client.post("/", headers=headers, json={
+            "jsonrpc": "2.0", "id": 1, "method": "initialize",
+            "params": {"protocolVersion": "2025-06-18", "capabilities": {},
+                       "clientInfo": {"name": "transport-test", "version": "1"}},
+        })
+    assert response.status_code == expected_status
+    if expected_status == 200:
+        assert "result" in response.json()
 
 
 class _DummyApp:
