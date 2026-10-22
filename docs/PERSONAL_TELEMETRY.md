@@ -33,6 +33,7 @@ Content-Type: application/json
 ```json
 {
   "source": "alipay",
+  "event_id": "<每次新通知生成的 UUID；网络重试复用>",
   "title": "支付宝",
   "body": "<通知正文变量>"
 }
@@ -43,6 +44,7 @@ Content-Type: application/json
 ```json
 {
   "source": "wechat",
+  "event_id": "<每次新通知生成的 UUID；网络重试复用>",
   "title": "微信支付",
   "body": "<通知正文变量>"
 }
@@ -118,13 +120,15 @@ backend 内嵌了一个 MCP 适配层，挂载在 `/mcp`（公网入口 `https:/
 | `add_life_note` | POST /telemetry/notes | 保存长期语义信息 |
 | `get_metrics` | GET /telemetry/metrics | 查询时间序列 |
 | `add_metric` | POST /telemetry/metrics | 写入指标 |
+| `get_analysis_status` | GET /telemetry/analysis/status | DeepSeek 配置、队列和用户纠正数量 |
+| `correct_event` | PUT /telemetry/events/{event_id}/analysis | 仅在用户明确确认或纠正时保存解释 |
 
 认证：MCP endpoint 要求 `Authorization: Bearer $TELEMETRY_AGENT_KEY`。key 只存在于服务端环境变量，不会返回给客户端、写进日志或进入前端。适配层通过回环地址调用本容器的 REST API（可用 `TELEMETRY_BASE_URL` 覆盖），并使用异步 HTTP，避免多 worker 下自调用阻塞。
 
 验证（部署后）：
 
 ```bash
-python scripts/smoke_mcp.py --base-url https://YOUR_DOMAIN --agent-key YOUR_TELEMETRY_AGENT_KEY
+python scripts/smoke_mcp.py --base-url https://YOUR_DOMAIN
 ```
 
 应输出 4 项全部 PASS（无认证 401、initialize、tools/list、真实调用 get_today）。
@@ -155,5 +159,7 @@ curl https://YOUR_DOMAIN/api/telemetry/ping
 curl -X POST https://YOUR_DOMAIN/api/telemetry/events \
   -H "Authorization: Bearer $TELEMETRY_INGEST_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"source":"alipay","title":"支付宝","body":"你已向测试商户付款￥1.00"}'
+  -d '{"source":"alipay","kind":"deployment_test","payload":{"test":true},"title":"支付宝","body":"部署验收测试，非真实消费：付款￥1.00"}'
 ```
+
+DeepSeek 上下文分析、用户纠正和快捷指令的完整说明见 [TELEMETRY_CONTEXT.md](TELEMETRY_CONTEXT.md)。

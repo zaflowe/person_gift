@@ -1,5 +1,6 @@
 """Application configuration using pydantic-settings."""
 from pydantic_settings import BaseSettings
+from pydantic import Field, SecretStr
 
 
 class Settings(BaseSettings):
@@ -16,6 +17,13 @@ class Settings(BaseSettings):
     # for GPT/administration because it can read and write semantic state.
     telemetry_ingest_key: str = ""
     telemetry_agent_key: str = ""
+
+    # Used only by the server-side telemetry worker, independently of other AI.
+    deepseek_api_key: SecretStr = SecretStr("")
+    deepseek_base_url: str = "https://api.deepseek.com"
+    deepseek_model: str = "deepseek-flash"
+    deepseek_timeout_seconds: float = Field(default=30, ge=1, le=90)
+    telemetry_enrichment_enabled: bool = False
 
     gemini_mock_mode: bool = False
 

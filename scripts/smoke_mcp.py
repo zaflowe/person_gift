@@ -84,7 +84,7 @@ def main() -> int:
     # 3. Tool list.
     resp = _post(url, agent_key, {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})
     names = [t["name"] for t in resp.json().get("result", {}).get("tools", [])] if resp.status_code == 200 else []
-    expected = {"get_context", "get_today", "search_life", "get_state", "update_state", "add_life_note", "get_metrics", "add_metric"}
+    expected = {"get_context", "get_today", "search_life", "get_state", "update_state", "add_life_note", "get_metrics", "add_metric", "get_analysis_status", "correct_event"}
     ok &= _check("tools/list exposes all tools", expected <= set(names), ",".join(sorted(names)))
 
     # 4. One real read.

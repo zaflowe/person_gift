@@ -16,7 +16,6 @@ engine = create_engine(
     settings.database_url,
     connect_args=connect_args
 )
-print(f"Connecting to database: {settings.database_url}")
 # Create session factory
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 

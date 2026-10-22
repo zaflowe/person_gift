@@ -94,15 +94,42 @@ async def get_context(event_hours: int = 72, note_days: int = 30) -> dict[str, A
 @mcp.tool()
 async def get_today() -> dict[str, Any]:
     """Get today's summary: events, notes, metrics and detected spending (CNY)
-    for the current local day. Use for questions like 'what did I spend today'."""
+    for the current local day. Test events are excluded from spending. Event
+    analysis is an AI proposal unless confirmed_by_user is true; never present
+    an unconfirmed activity as fact. Use for 'what did I spend today'."""
     return await _request("GET", "/telemetry/today")
 
 
 @mcp.tool()
 async def search_life(query: str, limit: int = 50) -> dict[str, Any]:
-    """Search the user's life notes and raw telemetry events by keyword. Use
-    for questions like 'when did I first mention wanting a 3D lidar'."""
+    """Search life notes, raw events and effective event interpretations by
+    keyword (including 午饭/打车). Respect confirmed_by_user: AI guesses are not
+    facts. Use for questions like 'when did I first mention wanting a 3D lidar'."""
     return await _request("GET", "/telemetry/search", params={"q": query, "limit": limit})
+
+
+@mcp.tool()
+async def get_analysis_status() -> dict[str, Any]:
+    """Read DeepSeek interpretation availability, durable queue counts and
+    user correction count. No secrets. Learning uses retrieved history and
+    confirmed corrections, not model weight training."""
+    return await _request("GET", "/telemetry/analysis/status")
+
+
+@mcp.tool()
+async def correct_event(event_id: str, category: str, activity: str, summary: str,
+                        merchant: Optional[str] = None, comment: Optional[str] = None) -> dict[str, Any]:
+    """ONLY when the user explicitly corrects or confirms an event's purpose,
+    save their interpretation. First find the exact event ID via get_today or
+    search_life; never guess an ID. Preserve raw data. category: food, transport,
+    shopping, bills, income, refund, transfer, other, unknown. activity: breakfast,
+    lunch, dinner, snack, taxi, public_transit, groceries, shopping, bill_payment,
+    income, refund, transfer, other, unknown. The correction becomes authoritative
+    and informs future similar events. Do not write inferred preferences."""
+    return await _request("PUT", f"/telemetry/events/{event_id}/analysis", payload={
+        "category": category, "activity": activity, "summary": summary,
+        "merchant": merchant, "comment": comment,
+    })
 
 
 @mcp.tool()

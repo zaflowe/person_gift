@@ -11,13 +11,14 @@ from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from pydantic import BaseModel, Field
-from sqlalchemy import desc
+from sqlalchemy import desc, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
-from app.models.telemetry import LifeNote, PersonalState, TelemetryEvent, TelemetryMetric
+from app.models.telemetry import LifeNote, PersonalState, TelemetryEvent, TelemetryMetric, TelemetryEventAnalysis, TelemetryAnalysisJob
+from app.services import telemetry_enrichment as enrichment
 
 router = APIRouter(prefix="/telemetry", tags=["telemetry"])
 
@@ -131,6 +132,8 @@ def _serialize_event(row: TelemetryEvent) -> dict[str, Any]:
         "normalized": json.loads(row.normalized_json) if row.normalized_json else None,
         "occurred_at": row.occurred_at.isoformat() if row.occurred_at else None,
         "received_at": row.received_at.replace(tzinfo=timezone.utc).isoformat(),
+        "is_test": enrichment.is_test_event(row),
+        "analysis": enrichment.analysis_view(row.analysis),
     }
 
 
@@ -157,6 +160,12 @@ def ingest_event(item: EventIn, db: Session = Depends(get_db)):
         existing = db.query(TelemetryEvent).filter(TelemetryEvent.dedupe_key == row.dedupe_key).first()
         return {"ok": True, "duplicate": True, "event": _serialize_event(existing)}
     db.refresh(row)
+    # The raw commit above is authoritative, even if queue creation fails.
+    # The background scanner recovers missing jobs without losing the event.
+    try:
+        enrichment.enqueue_event(db, row.id)
+    except Exception:
+        db.rollback()
     return {"ok": True, "duplicate": False, "event": _serialize_event(row)}
 
 
@@ -251,12 +260,14 @@ def today(db: Session = Depends(get_db)):
     spending = 0.0
     transaction_count = 0
     for event in events:
+        if enrichment.is_test_event(event):
+            continue
         if event.normalized_json:
             normalized = json.loads(event.normalized_json)
             if normalized.get("type") == "expense" and normalized.get("amount") is not None:
                 spending += float(normalized["amount"])
                 transaction_count += 1
-    return {"date": datetime.now(zone).date().isoformat(), "timezone": settings.timezone, "summary": {"event_count": len(events), "metric_count": len(metrics), "note_count": len(notes), "detected_spending_cny": round(spending, 2), "detected_transaction_count": transaction_count}, "events": [_serialize_event(row) for row in events], "notes": [{"text": row.text, "importance": row.importance, "source": row.source} for row in notes], "metrics": [{"source": row.source, "metric": row.metric, "value": row.value, "unit": row.unit} for row in metrics]}
+    return {"date": datetime.now(zone).date().isoformat(), "timezone": settings.timezone, "summary": {"event_count": len(events), "test_event_count": sum(enrichment.is_test_event(row) for row in events), "metric_count": len(metrics), "note_count": len(notes), "detected_spending_cny": round(spending, 2), "detected_transaction_count": transaction_count}, "events": [_serialize_event(row) for row in events], "notes": [{"text": row.text, "importance": row.importance, "source": row.source} for row in notes], "metrics": [{"source": row.source, "metric": row.metric, "value": row.value, "unit": row.unit} for row in metrics]}
 
 
 @router.get("/context", dependencies=[Depends(require_agent)])
@@ -277,9 +288,70 @@ def context(event_hours: int = Query(default=72, ge=1, le=720), note_days: int =
 @router.get("/search", dependencies=[Depends(require_agent)])
 def search_life(q: str = Query(min_length=1, max_length=300), limit: int = Query(default=50, ge=1, le=200), db: Session = Depends(get_db)):
     pattern = f"%{q}%"
-    events = db.query(TelemetryEvent).filter((TelemetryEvent.title.ilike(pattern)) | (TelemetryEvent.body.ilike(pattern)) | (TelemetryEvent.payload_json.ilike(pattern))).order_by(desc(TelemetryEvent.received_at)).limit(limit).all()
+    activity_aliases = {"午饭": "lunch", "午餐": "lunch", "早餐": "breakfast", "晚饭": "dinner", "晚餐": "dinner", "打车": "taxi", "出租车": "taxi", "购物": "shopping", "买菜": "groceries"}
+    semantic = f'%"activity":"{activity_aliases[q]}"%' if q in activity_aliases else pattern
+    events = db.query(TelemetryEvent).outerjoin(TelemetryEventAnalysis).filter(or_(
+        TelemetryEvent.title.ilike(pattern), TelemetryEvent.body.ilike(pattern), TelemetryEvent.payload_json.ilike(pattern),
+        # Once corrected, search the effective correction rather than an old guess.
+        TelemetryEventAnalysis.correction_json.ilike(semantic),
+        (TelemetryEventAnalysis.correction_json.is_(None) & TelemetryEventAnalysis.result_json.ilike(semantic)),
+    )).order_by(desc(TelemetryEvent.received_at)).limit(limit).all()
     notes = db.query(LifeNote).filter((LifeNote.text.ilike(pattern)) | (LifeNote.tags_json.ilike(pattern))).order_by(desc(LifeNote.created_at)).limit(limit).all()
     return {"query": q, "events": [_serialize_event(row) for row in events], "notes": [{"id": row.id, "text": row.text, "tags": json.loads(row.tags_json) if row.tags_json else [], "importance": row.importance, "source": row.source, "created_at": row.created_at.replace(tzinfo=timezone.utc).isoformat()} for row in notes]}
+
+
+@router.get("/analysis/status", dependencies=[Depends(require_agent)])
+def get_analysis_status(db: Session = Depends(get_db)):
+    return enrichment.analysis_status(db)
+
+
+@router.put("/events/{event_id}/analysis", dependencies=[Depends(require_agent)])
+def correct_event_analysis(event_id: str, item: enrichment.Correction, db: Session = Depends(get_db)):
+    try:
+        result = enrichment.correct_event(db, event_id, item)
+    except LookupError:
+        raise HTTPException(status_code=404, detail="event not found") from None
+    return {"ok": True, "event_id": event_id, "analysis": result}
+
+
+@router.post("/analysis/preview", dependencies=[Depends(require_agent)])
+def preview_analysis(item: EventIn, db: Session = Depends(get_db)):
+    """Provider acceptance test with no database writes or spending side effects."""
+    row = TelemetryEvent(id="preview", source=item.source, kind="raw", title=item.title, body=item.body,
+                         occurred_at=item.occurred_at.astimezone(timezone.utc).replace(tzinfo=None) if item.occurred_at and item.occurred_at.tzinfo else item.occurred_at,
+                         received_at=datetime.utcnow(), normalized_json=_json(_parse_transaction(item.body or "")))
+    reason = enrichment.skip_reason(row)
+    if reason:
+        return {"saved": False, "status": "skipped", "reason": reason}
+    try:
+        ctx, _ = enrichment.build_context(db, row)
+        db.rollback()
+        result, model, _ = enrichment.interpret(ctx)
+    except enrichment.EnrichmentError as exc:
+        raise HTTPException(status_code=503, detail=exc.code) from None
+    return {"saved": False, "confirmed_by_user": False, "proposal": result, "model": model}
+
+
+@router.post("/events/{event_id}/reanalyze", dependencies=[Depends(require_agent)])
+def reanalyze_event(event_id: str, db: Session = Depends(get_db)):
+    if db.get(TelemetryEvent, event_id) is None:
+        raise HTTPException(status_code=404, detail="event not found")
+    enrichment.enqueue_event(db, event_id)
+    # Obtain the same write lock used by correction/completion before checking
+    # confirmation, so a concurrent user correction cannot be requeued.
+    db.query(TelemetryAnalysisJob).filter_by(event_id=event_id).update(
+        {"updated_at": datetime.utcnow()}, synchronize_session=False)
+    analysis = db.query(TelemetryEventAnalysis).filter_by(event_id=event_id).populate_existing().one()
+    if analysis.correction_json:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="user-confirmed interpretation is preserved")
+    db.query(TelemetryAnalysisJob).filter_by(event_id=event_id).update(
+        {"status": "pending", "attempts": 0, "claim_token": None, "lease_until": None,
+         "next_attempt_at": datetime.utcnow()}, synchronize_session=False)
+    db.query(TelemetryEventAnalysis).filter_by(event_id=event_id).update(
+        {"status": "queued", "error_code": None, "updated_at": datetime.utcnow()}, synchronize_session=False)
+    db.commit()
+    return {"ok": True, "event_id": event_id, "status": "queued"}
 
 
 @router.get("/ping")

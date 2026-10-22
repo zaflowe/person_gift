@@ -80,6 +80,8 @@ def test_mcp_tools_registered():
         "add_life_note",
         "get_metrics",
         "add_metric",
+        "get_analysis_status",
+        "correct_event",
     }
     tools = _run(mcp.list_tools())
     registered = {tool.name for tool in tools}
