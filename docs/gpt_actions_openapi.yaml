@@ -1,0 +1,126 @@
+openapi: 3.1.0
+info:
+  title: Personal Telemetry
+  description: >
+    用户的个人数字孪生数据底座。可读取当前状态、今日摘要、搜索人生备注与原始事件、
+    查询指标，也可写入长期语义备注和当前状态。所有时间均为服务器本地时区。
+  version: 1.0.0
+servers:
+  - url: https://YOUR_DOMAIN
+paths:
+  /api/telemetry/context:
+    get:
+      operationId: getContext
+      summary: 获取用户当前完整上下文（默认第一读）
+      description: 返回当前状态、重要人生备注、近期原始事件和最新指标。需要了解用户近况时优先调用。
+      parameters:
+        - name: event_hours
+          in: query
+          schema: { type: integer, default: 72, minimum: 1, maximum: 720 }
+        - name: note_days
+          in: query
+          schema: { type: integer, default: 30, minimum: 1, maximum: 365 }
+      responses:
+        "200": { description: 上下文数据 }
+  /api/telemetry/today:
+    get:
+      operationId: getToday
+      summary: 获取今天的摘要
+      description: 返回今天的事件数、指标数、备注数、已识别消费金额（CNY）及明细。
+      responses:
+        "200": { description: 今日摘要 }
+  /api/telemetry/search:
+    get:
+      operationId: searchLife
+      summary: 搜索人生备注和原始事件
+      description: 按关键词搜索，例如"我什么时候第一次说想买3D雷达"。
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 300 }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 50, minimum: 1, maximum: 200 }
+      responses:
+        "200": { description: 匹配的事件和备注 }
+  /api/telemetry/state:
+    get:
+      operationId: getState
+      summary: 读取当前状态
+      description: 返回 key -> 当前值，例如 current_project、current_goal。
+      responses:
+        "200": { description: 当前状态 }
+  /api/telemetry/state/{key}:
+    put:
+      operationId: updateState
+      summary: 更新一项当前状态
+      description: 仅在用户明确表示状态变化时调用，例如更换当前项目。
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [value]
+              properties:
+                value:
+                  description: 任意 JSON 值
+                source:
+                  type: string
+                  default: gpt
+      responses:
+        "200": { description: 更新结果 }
+  /api/telemetry/notes:
+    post:
+      operationId: addLifeNote
+      summary: 保存一条长期语义备注
+      description: 保存决定、计划、重要事件。importance 0-1，重大事项才用 >=0.7，琐碎聊天不要保存。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text: { type: string, minLength: 1, maxLength: 20000 }
+                tags:
+                  type: array
+                  items: { type: string }
+                importance: { type: number, default: 0.5, minimum: 0, maximum: 1 }
+                source: { type: string, default: gpt }
+      responses:
+        "200": { description: 保存结果 }
+  /api/telemetry/metrics:
+    get:
+      operationId: getMetrics
+      summary: 查询数值时间序列
+      description: 例如 metric='douyin.followers.total'，hours 为回看窗口（默认 7 天）。
+      parameters:
+        - name: metric
+          in: query
+          schema: { type: string }
+        - name: source
+          in: query
+          schema: { type: string }
+        - name: hours
+          in: query
+          schema: { type: integer, default: 168, minimum: 1, maximum: 8784 }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 500, minimum: 1, maximum: 5000 }
+      responses:
+        "200": { description: 指标序列 }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+security:
+  - bearerAuth: []

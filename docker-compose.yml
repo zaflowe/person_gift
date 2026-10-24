@@ -1,9 +1,6 @@
 version: '3.8'
 
 services:
-  # ----------------------------------------------------
-  # DATABASE (PostgreSQL)
-  # ----------------------------------------------------
   db:
     image: postgres:15-alpine
     restart: always
@@ -21,10 +18,6 @@ services:
       timeout: 5s
       retries: 5
 
-  # ----------------------------------------------------
-  # CACHE / QUEUE (Redis)
-  # ----------------------------------------------------
-  # Future-proofing for APScheduler distributed jobs & caching
   redis:
     image: redis:alpine
     restart: always
@@ -33,9 +26,6 @@ services:
     networks:
       - app_network
 
-  # ----------------------------------------------------
-  # BACKEND (FastAPI + Gunicorn)
-  # ----------------------------------------------------
   backend:
     build:
       context: .
@@ -47,16 +37,20 @@ services:
       redis:
         condition: service_started
     environment:
-      # Database connection string for Postgres
       DATABASE_URL: postgresql://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-changeme_in_production}@db:5432/${POSTGRES_DB:-person_gift}
-      # Redis Connection (System ready)
       REDIS_URL: redis://redis:6379/0
-      # CORS origins (Caddy handles domain, but API needs to know)
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-https://yourdomain.com}
       JWT_SECRET: ${JWT_SECRET:-default_secret_please_change}
       TIMEZONE: ${TIMEZONE:-Asia/Shanghai}
+      TELEMETRY_INGEST_KEY: ${TELEMETRY_INGEST_KEY}
+      TELEMETRY_AGENT_KEY: ${TELEMETRY_AGENT_KEY}
+      TELEMETRY_ENRICHMENT_ENABLED: ${TELEMETRY_ENRICHMENT_ENABLED:-false}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
+      DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-flash}
+      MCP_ALLOWED_HOSTS: ${MCP_ALLOWED_HOSTS:-}
+      MCP_ALLOWED_ORIGINS: ${MCP_ALLOWED_ORIGINS:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY}
-      # AI Configuration
       AI_PROVIDER: ${AI_PROVIDER:-qwen}
       QWEN_API_KEY: ${QWEN_API_KEY}
       QWEN_BASE_URL: ${QWEN_BASE_URL}
@@ -72,9 +66,6 @@ services:
       timeout: 5s
       retries: 6
 
-  # ----------------------------------------------------
-  # FRONTEND (Next.js Standalone)
-  # ----------------------------------------------------
   frontend:
     build:
       context: ./frontend
@@ -84,17 +75,12 @@ services:
         NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-/api}
     restart: always
     environment:
-      # Runtime fallback (build args are primary)
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api}
       NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-/api}
-      # Hostname for standalone server
       HOSTNAME: "0.0.0.0"
     networks:
       - app_network
 
-  # ----------------------------------------------------
-  # PROXY (Caddy - Auto HTTPS)
-  # ----------------------------------------------------
   caddy:
     image: caddy:alpine
     restart: always
@@ -116,7 +102,6 @@ volumes:
   redis_data:
   caddy_data:
   caddy_config:
-
 
 networks:
   app_network:

@@ -11,6 +11,12 @@
         reverse_proxy backend:8000
     }
 
+    # Personal Telemetry MCP endpoint for GPT clients. No prefix strip; the
+    # backend mounts it at /mcp and enforces the agent key itself.
+    handle /mcp* {
+        reverse_proxy backend:8000
+    }
+
     # Frontend
     handle /* {
         reverse_proxy frontend:3000

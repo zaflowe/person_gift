@@ -1,0 +1,10 @@
+[Unit]
+Description=Sync collected Alipay ledger into private telemetry
+After=docker.service person-gift-alipay-agent.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/person-gift-alipay/sync_telemetry.py
+TimeoutStartSec=120
+Nice=10

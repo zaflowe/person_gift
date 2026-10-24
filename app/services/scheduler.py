@@ -269,6 +269,10 @@ def start_scheduler():
         replace_existing=True
     )
     
+    from app.services.telemetry_enrichment import process_enrichment_tick
+    scheduler.add_job(process_enrichment_tick, "interval", seconds=5,
+                      id="telemetry_enrichment", replace_existing=True,
+                      max_instances=1, coalesce=True, misfire_grace_time=30)
     scheduler.start()
 
     logger.info("Scheduler started")
