@@ -105,7 +105,7 @@ def _serialize_event(row: TelemetryEvent, accounting: Optional[dict] = None) -> 
         "body": row.body,
         "payload": json.loads(row.payload_json) if row.payload_json else None,
         "normalized": json.loads(row.normalized_json) if row.normalized_json else None,
-        "occurred_at": row.occurred_at.isoformat() if row.occurred_at else None,
+        "occurred_at": row.occurred_at.replace(tzinfo=timezone.utc).isoformat() if row.occurred_at else None,
         "received_at": row.received_at.replace(tzinfo=timezone.utc).isoformat(),
         "is_test": enrichment.is_test_event(row),
         "analysis": enrichment.analysis_view(row.analysis),

@@ -85,10 +85,16 @@ def accounting(events):
             continue
         text = "\n".join(x for x in (e.title, e.body) if x)
         # ios_payment is shared by WeChat and Alipay; never match by source alone.
-        if "微信" in text or not re.search(r"支付宝|花呗|账户\d+\*+\d+.*付款", text, re.S):
+        if "微信" in text:
+            continue
+        identified = bool(re.search(r"支付宝|花呗|账户\d+\*+\d+.*付款", text, re.S))
+        merchant = re.search(r"交易提醒.*?你在(.{2,100}?)成功付款", text, re.S)
+        merchant_name = re.sub(r"\s+", "", merchant[1]).casefold() if merchant else None
+        if not identified and not merchant_name:
             continue
         n = values[e.id]
         matches = [w for w in web if values[w.id] and not (json.loads(w.payload_json or "{}").get("test"))
+                   and (identified or merchant_name in re.sub(r"\s+", "", w.title or "").casefold())
                    and values[w.id].get("type") == n.get("type")
                    and Decimal(str(values[w.id].get("amount"))) == Decimal(str(n.get("amount")))
                    and abs((event_time(w) - event_time(e)).total_seconds()) <= 180]

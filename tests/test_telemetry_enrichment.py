@@ -408,3 +408,21 @@ def test_entire_import_batch_validated_before_changes(sessions):
         with pytest.raises(ValueError):
             import_bills(db, [bill_record(), bill_record(key='2234567890123456', when=datetime.utcnow())])
         assert db.query(TelemetryEvent).count() == 0
+
+
+@pytest.mark.parametrize('name,total,duplicates', [
+    ('App Store & Apple Music；10.24购买', 5, 1),
+    ('另一家商户', 10, 0),
+])
+def test_merchant_specific_auto_debit_notice_reconciles_only_same_merchant(sessions, client, name, total, duplicates):
+    from app.services.alipay_import import import_bills
+    with sessions() as db:
+        import_bills(db, [bill_record(cents=500, name=name)])
+    headers = {'Authorization': 'Bearer test-agent'}
+    body = 'Apple 交易提醒\n你在App Store & Apple Music成功付款5.00元，点击查看代扣明细 >'
+    client.post('/telemetry/events', headers=headers, json={'source': 'ios_payment', 'body': body})
+    data = client.get('/telemetry/today', headers=headers).json()
+    assert data['summary']['detected_spending_cny'] == total
+    assert data['summary']['duplicate_notification_count'] == duplicates
+    web = next(e for e in data['events'] if e['source'] == 'alipay_web')
+    assert web['occurred_at'].endswith('+00:00')
