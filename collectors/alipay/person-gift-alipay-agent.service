@@ -1,0 +1,18 @@
+[Unit]
+Description=Person Gift read-only Alipay bill collector
+After=docker.service network-online.target person-gift-mihomo.service
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=15
+ExecStartPre=-/usr/bin/docker rm -f person-gift-alipay-agent
+ExecStart=/usr/bin/docker run --rm --name person-gift-alipay-agent --init --user 1000:1000 --network host --memory 600m --memory-swap 900m --cpus 0.5 --pids-limit 256 --shm-size 128m --security-opt seccomp=/opt/person-gift-alipay/seccomp_profile.json --mount type=bind,src=/var/lib/person-gift-alipay,dst=/data --mount type=bind,src=/opt/person-gift-alipay,dst=/app,readonly -e COLLECT_INTERVAL_SECONDS=14400 -e COLLECTOR_PROXY=http://127.0.0.1:17897 --entrypoint python person-gift-alipay-agent:local /app/agent.py
+ExecStop=/usr/bin/docker stop -t 30 person-gift-alipay-agent
+TimeoutStartSec=120
+TimeoutStopSec=60
+
+[Install]
+WantedBy=multi-user.target

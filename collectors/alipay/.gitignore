@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+seccomp_profile.json
+seccomp-source.json
+profile/
+data/
+login*.json
+login*.png
+*.sqlite3*
+status.json
+request.json
