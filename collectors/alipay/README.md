@@ -12,7 +12,11 @@
 - `status.json`：当前状态、最近查询时间、下次计划时间、新增/变化数量、完整性与解析错误。
 - `login.png`、`login-qr.json`：需要用户登录时的临时登录材料。二维码地址不得写入普通日志；登录成功后清除临时文件。
 
-这轮先独立存储采集结果，**尚未把历史账单写入现有 telemetry_events 或 MCP 消费统计**。现有统计以接收时间汇总，直接导入历史会导致今天金额错误；应在独立验收后实现按交易发生时间、退款和还款去重的正式对接。
+`person-gift-alipay-sync.timer` 每五分钟将本地 SQLite 已采结果同步进现有 telemetry_events，无支付宝网络请求，不改变 12:00/16:00/20:00 的采集频率。宿主 `sync_telemetry.py` 通过 `docker exec` 标准输入调用 backend 的 `app.services.alipay_import`，无需复制密钥或新增公网接口。同步状态保存为 `telemetry-sync.json`，失败可安全重试。
+
+账单 source=`alipay_web`，按官方交易号幂等新增/更新，保留原始可见字段。汇总按交易发生时间归日，未提供时才用接收时间；退款、转账、还款单列。仅对支付宝身份明确、金额/类型相同且时间相距不超过三分钟的手机通知做匹配：双方唯一时标记重复，多候选标记待核对并不重复加总，不删除原事件。微信付款不会与支付宝合并。`get_context` 返回 `daily_spending` 与 `today_summary`；事件的 `accounting` 字段解释是否参与汇总。
+
+首次部署需先完整备份生产数据库和配置，再重建 backend、安装两个 sync systemd 单元，运行 `python3 /opt/person-gift-alipay/sync_telemetry.py --repair-existing` 修正旧规则解析并回填历史。原文及用户确认的解释保留，未确认且受影响的旧 AI 解释会重新排队。再次运行不带 `--repair-existing` 的同步命令验收幂等性；然后 `systemctl enable --now person-gift-alipay-sync.timer`。
 
 ## 部署
 

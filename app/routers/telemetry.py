@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from pydantic import BaseModel, Field
-from sqlalchemy import desc, or_
+from sqlalchemy import desc, or_, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -19,6 +19,7 @@ from app.config import settings
 from app.database import get_db
 from app.models.telemetry import LifeNote, PersonalState, TelemetryEvent, TelemetryMetric, TelemetryEventAnalysis, TelemetryAnalysisJob
 from app.services import telemetry_enrichment as enrichment
+from app.services import telemetry_transactions as transactions
 
 router = APIRouter(prefix="/telemetry", tags=["telemetry"])
 
@@ -83,33 +84,7 @@ def _json(value: Any) -> Optional[str]:
 
 
 def _parse_transaction(text: str) -> Optional[dict[str, Any]]:
-    """Best-effort Chinese payment parser. Raw input remains authoritative."""
-    if not text:
-        return None
-    amount = None
-    patterns = [
-        r"[¥￥]\s*([0-9]+(?:\.[0-9]{1,2})?)",
-        r"(?:人民币|金额|付款|支付|支出|收款|退款)[^0-9]{0,8}([0-9]+(?:\.[0-9]{1,2})?)\s*元?",
-        r"([0-9]+(?:\.[0-9]{1,2})?)\s*元",
-    ]
-    for pattern in patterns:
-        match = re.search(pattern, text)
-        if match:
-            amount = float(match.group(1))
-            break
-
-    if any(word in text for word in ("退款", "退回", "已退")):
-        tx_type = "refund"
-    elif any(word in text for word in ("收款", "到账", "收到")):
-        tx_type = "income"
-    elif any(word in text for word in ("转账", "转给")):
-        tx_type = "transfer"
-    elif amount is not None or any(word in text for word in ("付款", "支付", "支出", "消费")):
-        tx_type = "expense"
-    else:
-        return None
-
-    return {"type": tx_type, "amount": amount, "currency": "CNY", "parser": "rules-v1"}
+    return transactions.parse_transaction(text)
 
 
 def _dedupe_key(item: EventIn) -> str:
@@ -121,7 +96,7 @@ def _dedupe_key(item: EventIn) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
-def _serialize_event(row: TelemetryEvent) -> dict[str, Any]:
+def _serialize_event(row: TelemetryEvent, accounting: Optional[dict] = None) -> dict[str, Any]:
     return {
         "id": row.id,
         "source": row.source,
@@ -134,6 +109,7 @@ def _serialize_event(row: TelemetryEvent) -> dict[str, Any]:
         "received_at": row.received_at.replace(tzinfo=timezone.utc).isoformat(),
         "is_test": enrichment.is_test_event(row),
         "analysis": enrichment.analysis_view(row.analysis),
+        "accounting": accounting or transactions.accounting([row])[row.id],
     }
 
 
@@ -152,6 +128,8 @@ def ingest_event(item: EventIn, db: Session = Depends(get_db)):
         occurred_at=item.occurred_at.astimezone(timezone.utc).replace(tzinfo=None) if item.occurred_at and item.occurred_at.tzinfo else item.occurred_at,
         processed=normalized is not None,
     )
+    if row.occurred_at is None:
+        row.occurred_at = transactions.notification_time(combined, datetime.utcnow(), settings.timezone)
     db.add(row)
     try:
         db.commit()
@@ -254,27 +232,34 @@ def _local_day_bounds() -> tuple[datetime, datetime, ZoneInfo]:
 @router.get("/today", dependencies=[Depends(require_agent)])
 def today(db: Session = Depends(get_db)):
     start, end, zone = _local_day_bounds()
-    events = db.query(TelemetryEvent).filter(TelemetryEvent.received_at >= start, TelemetryEvent.received_at < end).order_by(TelemetryEvent.received_at.asc()).all()
+    timestamp = func.coalesce(TelemetryEvent.occurred_at, TelemetryEvent.received_at)
+    nearby = db.query(TelemetryEvent).filter(timestamp >= start - timedelta(minutes=3), timestamp < end + timedelta(minutes=3)).order_by(timestamp.asc()).all()
+    events = [row for row in nearby if start <= transactions.event_time(row) < end]
+    decisions = transactions.accounting(nearby)
+    selected = {row.id: decisions[row.id] for row in events}
     notes = db.query(LifeNote).filter(LifeNote.created_at >= start, LifeNote.created_at < end).order_by(LifeNote.created_at.asc()).all()
     metrics = db.query(TelemetryMetric).filter(TelemetryMetric.observed_at >= start, TelemetryMetric.observed_at < end).order_by(TelemetryMetric.observed_at.asc()).all()
-    spending = 0.0
-    transaction_count = 0
-    for event in events:
-        if enrichment.is_test_event(event):
-            continue
-        if event.normalized_json:
-            normalized = json.loads(event.normalized_json)
-            if normalized.get("type") == "expense" and normalized.get("amount") is not None:
-                spending += float(normalized["amount"])
-                transaction_count += 1
-    return {"date": datetime.now(zone).date().isoformat(), "timezone": settings.timezone, "summary": {"event_count": len(events), "test_event_count": sum(enrichment.is_test_event(row) for row in events), "metric_count": len(metrics), "note_count": len(notes), "detected_spending_cny": round(spending, 2), "detected_transaction_count": transaction_count}, "events": [_serialize_event(row) for row in events], "notes": [{"text": row.text, "importance": row.importance, "source": row.source} for row in notes], "metrics": [{"source": row.source, "metric": row.metric, "value": row.value, "unit": row.unit} for row in metrics]}
+    summary = {"event_count": len(events), "test_event_count": sum(enrichment.is_test_event(row) for row in events), "metric_count": len(metrics), "note_count": len(notes), **transactions.spending_summary(events, selected)}
+    return {"date": datetime.now(zone).date().isoformat(), "timezone": settings.timezone, "summary": summary,
+            "events": [_serialize_event(row, decisions[row.id]) for row in events],
+            "notes": [{"text": row.text, "importance": row.importance, "source": row.source} for row in notes],
+            "metrics": [{"source": row.source, "metric": row.metric, "value": row.value, "unit": row.unit} for row in metrics]}
+
 
 
 @router.get("/context", dependencies=[Depends(require_agent)])
 def context(event_hours: int = Query(default=72, ge=1, le=720), note_days: int = Query(default=30, ge=1, le=365), db: Session = Depends(get_db)):
     event_since = datetime.utcnow() - timedelta(hours=event_hours)
     note_since = datetime.utcnow() - timedelta(days=note_days)
-    events = db.query(TelemetryEvent).filter(TelemetryEvent.received_at >= event_since).order_by(desc(TelemetryEvent.received_at)).limit(150).all()
+    timestamp = func.coalesce(TelemetryEvent.occurred_at, TelemetryEvent.received_at)
+    window_events = db.query(TelemetryEvent).filter(timestamp >= event_since).order_by(desc(timestamp)).all()
+    events = window_events[:150]
+    decisions = transactions.accounting(window_events)
+    daily = {}
+    for row in window_events:
+        day = transactions.event_time(row).replace(tzinfo=timezone.utc).astimezone(ZoneInfo(settings.timezone)).date().isoformat()
+        daily.setdefault(day, []).append(row)
+    daily_spending = [{"date": day, **transactions.spending_summary(rows, {row.id: decisions[row.id] for row in rows})} for day, rows in sorted(daily.items())]
     notes = db.query(LifeNote).filter(LifeNote.created_at >= note_since).order_by(desc(LifeNote.importance), desc(LifeNote.created_at)).limit(80).all()
     states = db.query(PersonalState).all()
     latest_metrics: dict[str, dict[str, Any]] = {}
@@ -282,7 +267,7 @@ def context(event_hours: int = Query(default=72, ge=1, le=720), note_days: int =
         key = f"{row.source}:{row.metric}:{row.dimensions_json or ''}"
         if key not in latest_metrics:
             latest_metrics[key] = {"source": row.source, "metric": row.metric, "value": row.value, "unit": row.unit, "dimensions": json.loads(row.dimensions_json) if row.dimensions_json else None, "observed_at": row.observed_at.replace(tzinfo=timezone.utc).isoformat()}
-    return {"generated_at": datetime.now(timezone.utc).isoformat(), "timezone": settings.timezone, "state": {row.key: json.loads(row.value_json) for row in states}, "important_notes": [{"text": row.text, "importance": row.importance, "tags": json.loads(row.tags_json) if row.tags_json else [], "created_at": row.created_at.replace(tzinfo=timezone.utc).isoformat()} for row in notes], "recent_events": [_serialize_event(row) for row in events], "latest_metrics": list(latest_metrics.values())}
+    return {"generated_at": datetime.now(timezone.utc).isoformat(), "timezone": settings.timezone, "state": {row.key: json.loads(row.value_json) for row in states}, "important_notes": [{"text": row.text, "importance": row.importance, "tags": json.loads(row.tags_json) if row.tags_json else [], "created_at": row.created_at.replace(tzinfo=timezone.utc).isoformat()} for row in notes], "recent_events": [_serialize_event(row, decisions[row.id]) for row in events], "today_summary": today(db)["summary"], "daily_spending": daily_spending, "latest_metrics": list(latest_metrics.values())}
 
 
 @router.get("/search", dependencies=[Depends(require_agent)])
@@ -297,7 +282,8 @@ def search_life(q: str = Query(min_length=1, max_length=300), limit: int = Query
         (TelemetryEventAnalysis.correction_json.is_(None) & TelemetryEventAnalysis.result_json.ilike(semantic)),
     )).order_by(desc(TelemetryEvent.received_at)).limit(limit).all()
     notes = db.query(LifeNote).filter((LifeNote.text.ilike(pattern)) | (LifeNote.tags_json.ilike(pattern))).order_by(desc(LifeNote.created_at)).limit(limit).all()
-    return {"query": q, "events": [_serialize_event(row) for row in events], "notes": [{"id": row.id, "text": row.text, "tags": json.loads(row.tags_json) if row.tags_json else [], "importance": row.importance, "source": row.source, "created_at": row.created_at.replace(tzinfo=timezone.utc).isoformat()} for row in notes]}
+    decisions = transactions.accounting(events)
+    return {"query": q, "events": [_serialize_event(row, decisions[row.id]) for row in events], "notes": [{"id": row.id, "text": row.text, "tags": json.loads(row.tags_json) if row.tags_json else [], "importance": row.importance, "source": row.source, "created_at": row.created_at.replace(tzinfo=timezone.utc).isoformat()} for row in notes]}
 
 
 @router.get("/analysis/status", dependencies=[Depends(require_agent)])

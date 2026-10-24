@@ -296,3 +296,115 @@ def test_reanalyze_invalidates_old_claim_and_refuses_confirmed_event(sessions, c
     with sessions() as db:
         assert db.get(TelemetryAnalysisJob, event_id).status == "done"
         assert db.get(TelemetryEventAnalysis, event_id).correction_json is not None
+
+
+def bill_record(*, key='1234567890123456', when=None, cents=1400, name='美食广场032', direction='outflow', status='交易成功'):
+    from datetime import timezone
+    stamp = when or datetime.now(timezone.utc)
+    return {'external_id': 'TRADE:' + key, 'created_at': stamp.isoformat(), 'amount_cents': cents,
+            'name': name, 'direction': direction, 'status': status, 'content_hash': 'a' * 64,
+            'raw': {'cells': ['original official row']}}
+
+
+def test_web_backfill_uses_transaction_day_and_is_idempotent(sessions, client):
+    from app.services.alipay_import import import_bills
+    with sessions() as db:
+        old = bill_record(when=datetime.now().astimezone() - timedelta(days=3))
+        current = bill_record(key='2234567890123456')
+        assert import_bills(db, [old, current]) == {'new': 2, 'changed': 0, 'total': 2}
+        assert import_bills(db, [old, current]) == {'new': 0, 'changed': 0, 'total': 2}
+        ids = [e.id for e in db.query(TelemetryEvent)]
+    headers = {'Authorization': 'Bearer test-agent'}
+    today = client.get('/telemetry/today', headers=headers).json()
+    assert today['summary']['detected_spending_cny'] == 14
+    assert today['summary']['detected_transaction_count'] == 1
+    assert len(today['events']) == 1
+    assert len(client.get('/telemetry/search', params={'q': '美食广场'}, headers=headers).json()['events']) == 2
+    with sessions() as db:
+        old['status'] = '交易关闭'
+        assert import_bills(db, [old]) == {'new': 0, 'changed': 1, 'total': 2}
+        assert sorted(e.id for e in db.query(TelemetryEvent)) == sorted(ids)
+
+
+def test_web_and_notification_count_once_and_keep_both(sessions, client):
+    from app.services.alipay_import import import_bills
+    from datetime import timezone
+    stamp = datetime.now(timezone.utc)
+    with sessions() as db:
+        import_bills(db, [bill_record(when=stamp)])
+    local = stamp.astimezone(__import__('zoneinfo').ZoneInfo('Asia/Shanghai'))
+    body = f'支付成功通知\n账户193****9886于{local.month}月{local.day}日{local.hour}时{local.minute}分成功付款14.00元'
+    headers = {'Authorization': 'Bearer test-agent'}
+    client.post('/telemetry/events', headers=headers, json={'source': 'ios_payment', 'body': body})
+    data = client.get('/telemetry/today', headers=headers).json()
+    assert len(data['events']) == 2
+    assert data['summary']['detected_spending_cny'] == 14
+    assert data['summary']['duplicate_notification_count'] == 1
+    notification = next(e for e in data['events'] if e['source'] == 'ios_payment')
+    assert notification['accounting']['duplicate_of']
+    context = client.get('/telemetry/context', headers=headers).json()
+    assert context['today_summary']['detected_spending_cny'] == 14
+    assert sum(day['detected_spending_cny'] for day in context['daily_spending']) == 14
+
+
+def test_same_amount_real_payments_preserved_and_ambiguous_notification_flagged(sessions, client):
+    from app.services.alipay_import import import_bills
+    with sessions() as db:
+        import_bills(db, [bill_record(), bill_record(key='2234567890123456')])
+    headers = {'Authorization': 'Bearer test-agent'}
+    client.post('/telemetry/events', headers=headers, json={'source': 'ios_payment', 'body': '支付宝成功付款14.00元'})
+    data = client.get('/telemetry/today', headers=headers).json()
+    assert data['summary']['detected_spending_cny'] == 28
+    assert data['summary']['detected_transaction_count'] == 2
+    assert data['summary']['unreconciled_notification_count'] == 1
+    assert data['summary']['duplicate_notification_count'] == 0
+
+
+def test_wechat_never_dedupes_against_alipay(sessions, client):
+    from app.services.alipay_import import import_bills
+    with sessions() as db:
+        import_bills(db, [bill_record()])
+    headers = {'Authorization': 'Bearer test-agent'}
+    client.post('/telemetry/events', headers=headers, json={'source': 'ios_payment', 'body': '微信支付成功付款14.00元'})
+    assert client.get('/telemetry/today', headers=headers).json()['summary']['detected_spending_cny'] == 28
+
+
+def test_status_refunds_transfers_and_repayments(sessions, client):
+    from app.services.alipay_import import import_bills
+    rows = [bill_record(name='收钱码收款'),
+            bill_record(key='2234567890123456', cents=200, direction='inflow', name='退款'),
+            bill_record(key='3234567890123456', cents=9999, status='等待付款'),
+            bill_record(key='4234567890123456', cents=5000, name='花呗还款'),
+            bill_record(key='5234567890123456', cents=3000, name='余额提现')]
+    with sessions() as db:
+        import_bills(db, rows)
+    data = client.get('/telemetry/today', headers={'Authorization': 'Bearer test-agent'}).json()['summary']
+    assert data['detected_spending_cny'] == 14  # Outgoing 收钱码收款 is not income.
+    assert data['refund_cny'] == 2
+    assert data['net_spending_cny'] == 12
+    assert data['transfer_cny'] == 30
+    assert data['repayment_cny'] == 50
+
+
+def test_repair_preserves_original_notification_and_user_feedback(sessions):
+    from app.services.alipay_import import reparse_existing
+    with sessions() as db:
+        row = event(db, body='你在友宝有一笔3.10元的免密/自动扣款支付，点击领取6个支付宝积分。', normalized_json='{"type":"expense","amount":6}')
+        event_id, body = row.id, row.body
+        analysis = db.get(TelemetryEventAnalysis, event_id)
+        analysis.correction_json = service.dumps(proposal(summary='用户确认茉莉蜜茶'))
+        db.commit()
+        assert len(reparse_existing(db)) == 1
+        db.expire_all()
+        assert db.get(TelemetryEvent, event_id).body == body
+        assert json.loads(db.get(TelemetryEvent, event_id).normalized_json)['amount'] == 3.1
+        assert json.loads(db.get(TelemetryEventAnalysis, event_id).correction_json)['summary'] == '用户确认茉莉蜜茶'
+        assert reparse_existing(db) == []
+
+
+def test_entire_import_batch_validated_before_changes(sessions):
+    from app.services.alipay_import import import_bills
+    with sessions() as db:
+        with pytest.raises(ValueError):
+            import_bills(db, [bill_record(), bill_record(key='2234567890123456', when=datetime.utcnow())])
+        assert db.query(TelemetryEvent).count() == 0
